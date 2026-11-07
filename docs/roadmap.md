@@ -19,17 +19,30 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 - [x] **Where does the tab list live?**
   - Option 1: the panel reads Chrome directly. Simplest, but the list only exists while the panel is open.
   - Option 2 (recommended): the background service worker keeps the list and the panel shows it. That's where the server connection will run later, so this avoids a rewrite. Chrome stops idle service workers, so the list must be rebuilt by asking Chrome again, or saved in `chrome.storage.session`.
-  - Answer: Option 2
+  - Answer: Option 2. The set of identified tabs is saved in `chrome.storage.session`: it survives Chrome stopping the service worker, and is cleared when the browser closes or the extension reloads.
+
+### How tabs are identified
+
+`Tab.audible` only means "produced sound in the past couple of seconds". It stays `true` when a tab is muted at the tab level, but turns `false` when the tab is paused or muted in the player (e.g. YouTube's mute button). So it's a signal that adds a tab, never the rule for keeping one.
+
+- **A tab joins the list** when any of these is true:
+  - `audible` is `true`.
+  - `mutedInfo.muted` is `true` (muted at the tab level).
+  - The content script finds track info (`navigator.mediaSession.metadata`). This catches paused tabs and tabs muted in the player. *(Step 2)*
+  - The tab is being captured (`chrome.tabCapture.getCapturedTabs()`). *(Version 2)*
+- **It stays in the list** until the tab closes, or it moves to a different site, or the page clears its track info and has been silent for a while *(Step 2)*. Going silent, being muted or pausing doesn't remove it.
+- **The panel shows the state** instead of filtering on it: playing, paused, muted by the extension (`mutedInfo.reason === "extension"`), muted by the user, muted in the player.
+- **Muting is done at the tab level** (`chrome.tabs.update(id, { muted })`), never in the player. A tab muted in the player can't be unmuted that way, so the panel flags it for the streamer.
 
 ### Step 1: list playing tabs (tabs API only)
 
-- [ ] Add the `"tabs"` permission to the manifest. Check that tab titles, URLs and icons now come through.
-- [ ] Define a "tab source" type: tab ID, tab title, site, favicon, playing or not. Keep it in the extension for now; move it to `@tma/shared` when the server needs it.
-- [ ] Service worker: build the list when it starts with `chrome.tabs.query({ audible: true })`.
-- [ ] Service worker: keep the list current with `tabs.onUpdated` (playing, title and icon changes) and `tabs.onRemoved`.
-- [ ] Messaging: the panel asks for the current list when it opens, then receives updates over a `chrome.runtime` port.
-- [ ] Panel: show the list (icon, title, site) and an empty state ("No tab is playing audio").
-- [ ] Manual check: start and stop audio in two or three tabs, close a tab, reload the extension, and close and reopen the panel.
+- [x] Add the `"tabs"` permission to the manifest. Check that tab titles, URLs and icons now come through.
+- [x] Define a "tab source" type: tab ID, tab title, site, favicon, playing or not. Keep it in the extension for now; move it to `@tma/shared` when the server needs it.
+- [x] Service worker: identify tabs with the rule above (`audible` or `mutedInfo.muted` for now) and save their IDs and sites in `chrome.storage.session` (needs the `"storage"` permission).
+- [x] Service worker: keep the list current with the `tabs` events (`onUpdated`, `onRemoved`, `onReplaced`, etc.). Drop a tab when it closes or moves to a different site.
+- [x] Messaging: the panel asks for the current list when it opens, then receives updates over a `chrome.runtime` port.
+- [x] Panel: show the list (icon, title, site, playing/muted/silent) and an empty state.
+- [ ] Manual check: start and stop audio in two or three tabs, pause one, mute one at the tab level and one in the player, close a tab, navigate a tab to another site, reload the extension, and close and reopen the panel.
 
 ### Step 2: track info (title, artist, cover)
 
@@ -37,6 +50,8 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 - [ ] **Test first:** can a content script read `navigator.mediaSession.metadata`, or does that only work in the page's own JavaScript context (`world: "MAIN"`)? The answer decides how the next items are built.
 - [ ] Choose how to detect track changes: check every second or so, or intercept the page setting `navigator.mediaSession.metadata` (needs the page context). Send updates only when something changes.
 - [ ] Include the paused/playing state (`playbackState`), so paused tabs can stay in the list per the first decision.
+- [ ] Identification: a tab that publishes track info joins the list even when silent. Remove a tab once its track info is cleared and it has been silent for a while.
+- [ ] Detect "muted in the player" (`video.muted` or `volume === 0` on the page's media elements) and flag it in the panel.
 - [ ] Cover existing tabs: content scripts declared in the manifest don't run in tabs that were already open when the extension installs or reloads. Inject into those with `chrome.scripting.executeScript` at install and at startup.
 - [ ] Fallback when a site doesn't publish track info: use the tab title, and mark the entry as "no track info".
 - [ ] Artwork: pick the largest image the page offers.
@@ -55,6 +70,7 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 ## Version 2 (later)
 
 - Pick tabs as sources (`activeTab` + `tabCapture`). Confirm early that several tabs can be captured at the same time.
+- Captured tabs (`chrome.tabCapture.getCapturedTabs()`) always count as identified.
 - Offscreen document for audio processing.
 - WebSocket connection to the server, sending audio and track info.
 

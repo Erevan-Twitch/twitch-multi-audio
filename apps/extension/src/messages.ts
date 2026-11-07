@@ -2,15 +2,20 @@
 
 export const PANEL_PORT_NAME = "sidepanel";
 
+export type MuteState = "none" | "extension" | "user";
+
 export interface TabEntry {
   id: number;
   windowId: number;
   title: string;
-  url?: string;
+  /** Hostname of the tab's page, e.g. "music.youtube.com". */
+  site: string;
   favIconUrl?: string;
   active: boolean;
+  /** Produced sound in the past couple of seconds (true even when muted at the tab level). */
   audible: boolean;
-  muted: boolean;
+  /** Tab-level mute and who did it. */
+  muted: MuteState;
 }
 
 /** Messages sent by the service worker to the side panel. */

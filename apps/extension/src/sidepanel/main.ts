@@ -3,14 +3,11 @@ import { PANEL_PORT_NAME, type PanelMessage, type TabEntry } from "../messages.j
 const list = document.querySelector<HTMLUListElement>("#tabs")!;
 const emptyState = document.querySelector<HTMLParagraphElement>("#empty")!;
 
-function hostname(url: string | undefined): string {
-  if (!url) return "";
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-}
+const MUTE_LABELS: Record<TabEntry["muted"], string> = {
+  none: "",
+  extension: "Muted by Twitch Multi Audio",
+  user: "Muted",
+};
 
 function renderTab(tab: TabEntry): HTMLLIElement {
   const item = document.createElement("li");
@@ -31,19 +28,23 @@ function renderTab(tab: TabEntry): HTMLLIElement {
   title.textContent = tab.title || "Untitled";
   const site = document.createElement("span");
   site.className = "site";
-  site.textContent = hostname(tab.url);
+  site.textContent = tab.site;
   text.append(title, site);
 
-  item.append(icon, text);
-
-  if (tab.audible || tab.muted) {
-    const audio = document.createElement("span");
-    audio.className = "audio";
-    audio.textContent = tab.muted ? "🔇" : "🔊";
-    audio.title = tab.muted ? "Muted" : "Playing audio";
-    item.append(audio);
+  const audio = document.createElement("span");
+  audio.className = "audio";
+  if (tab.muted !== "none") {
+    audio.textContent = "🔇";
+    audio.title = MUTE_LABELS[tab.muted];
+  } else if (tab.audible) {
+    audio.textContent = "🔊";
+    audio.title = "Playing audio";
+  } else {
+    audio.textContent = "⏸";
+    audio.title = "Silent (paused or muted in the player)";
   }
 
+  item.append(icon, text, audio);
   return item;
 }
 
