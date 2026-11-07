@@ -1,0 +1,75 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  --muted-text: color-mix(in srgb, currentColor 60%, transparent);
+  --row-active: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 1.125rem;
+  margin: 0 0 12px;
+}
+
+#tabs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.tab.active {
+  background: var(--row-active);
+}
+
+.favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.title,
+.site {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  font-size: 0.875rem;
+}
+
+.site {
+  font-size: 0.75rem;
+  color: var(--muted-text);
+}
+
+.audio {
+  flex-shrink: 0;
+}
+
+#empty {
+  margin: 0;
+  color: var(--muted-text);
+}

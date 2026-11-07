@@ -1,0 +1,22 @@
+{
+  "name": "@tma/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Protocol types and constants shared between the extension and the server.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "devDependencies": {
+    "@tma/tsconfig": "workspace:*"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Twitch Multi Audio",
+  "version": "0.0.0",
+  "description": "Capture tab audio and now-playing info, and send them to the local Twitch Multi Audio server.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Open Twitch Multi Audio panel"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "permissions": ["sidePanel", "tabs", "activeTab"]
+}

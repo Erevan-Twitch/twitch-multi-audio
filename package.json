@@ -1,0 +1,21 @@
+{
+  "name": "twitch-multi-audio",
+  "private": true,
+  "description": "Aggregate multiple browser audio sources into a single virtual device for OBS, with now-playing info for Twitch streams.",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "turbo": "^2.11.10",
+    "typescript": "^7.0.2"
+  }
+}

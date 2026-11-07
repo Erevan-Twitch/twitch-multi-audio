@@ -1,0 +1,21 @@
+{
+  "name": "@tma/extension",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Chrome extension (Manifest V3) capturing tab audio and now-playing info (title, artist, cover).",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "node scripts/build.ts --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@tma/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@tma/tsconfig": "workspace:*",
+    "@types/chrome": "^0.3.7",
+    "esbuild": "^0.28.2"
+  }
+}
