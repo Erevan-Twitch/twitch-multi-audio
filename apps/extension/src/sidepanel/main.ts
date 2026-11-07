@@ -15,6 +15,9 @@ function status(tab: TabEntry): { icon: string; label: string } {
   if (playing && tab.media?.playerMuted) {
     return { icon: "🔈", label: "Muted in the player: unmute it in the page" };
   }
+  if (tab.silentWhilePlaying) {
+    return { icon: "🔈", label: "Playing but silent: probably muted in the player" };
+  }
   if (playing) return { icon: "🔊", label: "Playing" };
   return { icon: "⏸", label: "Paused" };
 }

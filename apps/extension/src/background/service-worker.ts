@@ -8,6 +8,7 @@ import {
 } from "../messages.js";
 
 const CONTENT_SCRIPT_FILE = "content/media-session.js";
+const PAGE_HOOK_FILE = "content/page-hook.js";
 
 chrome.runtime.onInstalled.addListener(() => {
   // Open the side panel when the toolbar icon is clicked.
@@ -24,6 +25,9 @@ async function injectIntoOpenTabs(): Promise<void> {
     tabs.map(async (tab) => {
       if (tab.id === undefined || tab.discarded) return;
       try {
+        // The hook only sees play() calls made after this, so a detached player
+        // already playing is picked up at its next play() (e.g. next track).
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [PAGE_HOOK_FILE], world: "MAIN" });
         await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [CONTENT_SCRIPT_FILE] });
       } catch {
         // Some pages can't be scripted (Chrome Web Store, error pages): skip them.
@@ -76,7 +80,24 @@ function muteStateOf(tab: chrome.tabs.Tab): MuteState {
   return info.reason === "extension" && info.extensionId === chrome.runtime.id ? "extension" : "user";
 }
 
-function toEntry(tab: chrome.tabs.Tab & { id: number }, record: TabRecord): TabEntry {
+/**
+ * `audible` lags behind the start of playback by about a second, so a tab only
+ * counts as "silent while playing" after this long.
+ */
+const SILENT_WHILE_PLAYING_DELAY_MS = 3000;
+
+/**
+ * When the tab will count as "silent while playing" if nothing changes:
+ * undefined when it doesn't apply (an element was checked, not playing, audible).
+ */
+function silentWhilePlayingAt(tab: chrome.tabs.Tab, media: MediaState | undefined): number | undefined {
+  if (!media || media.playerMuted !== null || media.playbackState !== "playing") return undefined;
+  if (tab.audible || media.playingSince === undefined) return undefined;
+  return media.playingSince + SILENT_WHILE_PLAYING_DELAY_MS;
+}
+
+function toEntry(tab: chrome.tabs.Tab & { id: number }, record: TabRecord, now: number): TabEntry {
+  const silentAt = silentWhilePlayingAt(tab, record.media);
   const entry: TabEntry = {
     id: tab.id,
     windowId: tab.windowId,
@@ -85,6 +106,7 @@ function toEntry(tab: chrome.tabs.Tab & { id: number }, record: TabRecord): TabE
     active: tab.active,
     audible: tab.audible ?? false,
     muted: muteStateOf(tab),
+    silentWhilePlaying: silentAt !== undefined && silentAt <= now,
   };
   if (tab.favIconUrl) entry.favIconUrl = tab.favIconUrl;
   if (record.media) entry.media = record.media;
@@ -96,6 +118,10 @@ async function refreshRecords(): Promise<TabEntry[]> {
   const [tabs, previous] = await Promise.all([chrome.tabs.query({}), loadRecords()]);
   const next: TabRecords = {};
   const entries: TabEntry[] = [];
+  const now = Date.now();
+  // Earliest moment a tab will become "silent while playing": no tab event fires
+  // then, so a refresh is scheduled for it.
+  let nextSilentCheck: number | undefined;
 
   for (const tab of tabs) {
     if (tab.id === undefined || tab.id === chrome.tabs.TAB_ID_NONE) continue;
@@ -118,8 +144,14 @@ async function refreshRecords(): Promise<TabEntry[]> {
     if (media) record.media = media;
     // Keep records for unidentified tabs only when they hold media info.
     if (identified || media) next[tab.id] = record;
-    if (identified) entries.push(toEntry({ ...tab, id: tab.id }, record));
+    if (identified) {
+      entries.push(toEntry({ ...tab, id: tab.id }, record, now));
+      const silentAt = silentWhilePlayingAt(tab, media);
+      if (silentAt !== undefined && silentAt > now) nextSilentCheck = Math.min(nextSilentCheck ?? silentAt, silentAt);
+    }
   }
+
+  if (nextSilentCheck !== undefined) setTimeout(scheduleRefresh, nextSilentCheck - now);
 
   // Closed tabs aren't in the query anymore, so they drop out of `next`.
   if (JSON.stringify(next) !== JSON.stringify(previous)) await saveRecords(next);

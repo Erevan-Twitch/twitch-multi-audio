@@ -14,6 +14,8 @@ export interface MediaState {
   playbackState: PlaybackState;
   /** Muted (or volume 0) in the page's player; null when the page has no media element we can see. */
   playerMuted: boolean | null;
+  /** When `playbackState` last became "playing" (ms since epoch). */
+  playingSince?: number;
 }
 
 export interface TabEntry {
@@ -30,6 +32,12 @@ export interface TabEntry {
   muted: MuteState;
   /** Last state reported by the content script, if any. */
   media?: MediaState;
+  /**
+   * The page says it's playing but Chrome hears nothing, and no media element
+   * could be checked: probably muted in a player we can't see (Web Audio, or an
+   * element not attached to the page).
+   */
+  silentWhilePlaying: boolean;
 }
 
 /** Messages sent by the service worker to the side panel. */

@@ -16,10 +16,14 @@ The extension is tested manually for now. Each file in [`cases/`](cases/) is one
 ## Test page
 
 [`fixtures/media-page.html`](fixtures/media-page.html) lets you drive each input the extension reads:
-- **Player:** plays a quiet 440 Hz tone, with "Mute in player" buttons.
+- **Player:** plays a quiet 440 Hz tone, with "Mute in player" and "Volume 0 in player" buttons.
 - **Media Session metadata:** set, change ("Next track") or clear the track info.
 - **Declared playbackState:** sets `navigator.mediaSession.playbackState`.
 - **`?metadata=1`:** sets track info on load without playing.
+- **`?detached=1`:** keeps the `<audio>` player out of the page, like players the content script can't see (Chillhop).
+- **`?bgvideo=1`:** adds a decorative background video with the `muted` attribute, autoplay and loop (Chillhop).
+
+Options can be combined, e.g. `?detached=1&bgvideo=1&metadata=1`.
 
 The "Current page state" block shows what the page is doing. The artwork has three sizes in different colors: the 512px one is **green**. The panel should always show green, even though it isn't listed last.
 
@@ -33,7 +37,7 @@ The same page on two different sites, for tests that navigate between sites:
 | --- | --- |
 | 🔊 | Playing |
 | ⏸ | Paused or silent |
-| 🔈 | Playing but muted in the player |
+| 🔈 | Playing but muted in the player. When the player can't be seen, the tooltip says "probably". |
 | 🔇 | Muted at the tab level (tooltip says by whom) |
 
 Hover the icon to see the tooltip.

@@ -6,6 +6,7 @@
  */
 import type { TrackInfo } from "@tma/shared";
 import type { ContentMessage, MediaState, PlaybackState } from "../messages.js";
+import { QUERY_EVENT, REPORT_EVENT, parseReport, toElementState, type ElementState } from "./page-bridge.js";
 
 const POLL_INTERVAL_MS = 1000;
 /** A cleared track is only reported after this long, to ignore gaps between songs. */
@@ -47,9 +48,27 @@ function readTrack(): TrackInfo | null {
   return track;
 }
 
+/** Media elements kept out of the page, as reported by the page-context hook (page-hook.ts). */
+function readDetachedElements(): ElementState[] {
+  let reported: ElementState[] = [];
+  const onReport = (event: Event): void => {
+    reported = parseReport((event as CustomEvent<unknown>).detail);
+  };
+  document.addEventListener(REPORT_EVENT, onReport);
+  // The hook answers synchronously, during this dispatch.
+  document.dispatchEvent(new CustomEvent(QUERY_EVENT));
+  document.removeEventListener(REPORT_EVENT, onReport);
+  return reported;
+}
+
 function readMediaElements(): { playbackState: PlaybackState; playerMuted: boolean | null } {
-  const elements = [...document.querySelectorAll<HTMLMediaElement>("audio, video")].filter(
-    (element) => element.currentSrc || element.srcObject,
+  const inPage = [...document.querySelectorAll<HTMLMediaElement>("audio, video")]
+    .filter((element) => element.currentSrc || element.srcObject)
+    .map(toElementState);
+  const elements = [...inPage, ...readDetachedElements()].filter(
+    // Decorative videos (backgrounds, previews) declare the `muted` attribute in
+    // the HTML. A player muted by the user only changes the `.muted` property.
+    (element) => !element.defaultMuted,
   );
   const playing = elements.filter((element) => !element.paused && !element.ended);
   // Judge mute on the playing elements when there are some (ignores muted previews).
@@ -77,6 +96,7 @@ function start(): void {
   let lastSent: string | undefined;
   let lastTrack: TrackInfo | null = null;
   let trackClearedAt: number | undefined;
+  let playingSince: number | undefined;
 
   const timer = setInterval(check, POLL_INTERVAL_MS);
   globalThis.__tmaMediaWatcher = { isAlive: isExtensionAlive };
@@ -98,6 +118,13 @@ function start(): void {
       trackClearedAt ??= Date.now();
       if (Date.now() - trackClearedAt < TRACK_CLEARED_GRACE_MS) state.track = lastTrack;
       else lastTrack = null;
+    }
+
+    if (state.playbackState === "playing") {
+      playingSince ??= Date.now();
+      state.playingSince = playingSince;
+    } else {
+      playingSince = undefined;
     }
 
     const serialized = JSON.stringify(state);

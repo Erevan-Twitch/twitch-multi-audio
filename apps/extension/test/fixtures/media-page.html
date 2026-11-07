@@ -22,6 +22,8 @@
       <button id="pause">Pause</button>
       <button id="mute-player">Mute in player</button>
       <button id="unmute-player">Unmute in player</button>
+      <button id="volume-zero">Volume 0 in player</button>
+      <button id="volume-restore">Restore volume</button>
     </fieldset>
 
     <fieldset>
@@ -64,9 +66,28 @@
         return { src: `data:image/svg+xml,${encodeURIComponent(svg)}`, sizes: `${size}x${size}`, type: "image/svg+xml" };
       }
 
+      const params = new URLSearchParams(location.search);
+
       const audio = new Audio(toneUrl());
       audio.loop = true;
-      document.body.append(audio); // In the DOM so the content script can see it.
+      // ?detached=1 keeps the player out of the page, like sites the content script can't see into.
+      if (!params.has("detached")) document.body.append(audio);
+
+      // ?bgvideo=1 adds a decorative background video: `muted` attribute, autoplay, loop.
+      if (params.has("bgvideo")) {
+        const canvas = Object.assign(document.createElement("canvas"), { width: 160, height: 90 });
+        const context = canvas.getContext("2d");
+        let hue = 0;
+        setInterval(() => { hue = (hue + 2) % 360; context.fillStyle = `hsl(${hue} 60% 50%)`; context.fillRect(0, 0, 160, 90); }, 50);
+        const video = document.createElement("video");
+        video.setAttribute("muted", "");
+        video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.srcObject = canvas.captureStream(20);
+        video.id = "bg-video";
+        document.body.prepend(video);
+      }
 
       const $ = (id) => document.getElementById(id);
       let trackNumber = 1;
@@ -88,6 +109,9 @@
           {
             playing: !audio.paused,
             playerMuted: audio.muted,
+            playerVolume: audio.volume,
+            playerInPage: audio.isConnected,
+            backgroundVideo: params.has("bgvideo"),
             declaredPlaybackState: navigator.mediaSession.playbackState,
             metadata: m ? { title: m.title, artist: m.artist } : null,
           },
@@ -100,6 +124,9 @@
       $("pause").onclick = () => { audio.pause(); render(); };
       $("mute-player").onclick = () => { audio.muted = true; render(); };
       $("unmute-player").onclick = () => { audio.muted = false; render(); };
+      // Like Chillhop: "mute" by volume, which Chrome still reports as audible.
+      $("volume-zero").onclick = () => { audio.volume = 0; render(); };
+      $("volume-restore").onclick = () => { audio.volume = 1; render(); };
       $("set-metadata").onclick = setMetadata;
       $("next-track").onclick = () => { trackNumber += 1; $("title").value = `Test Track ${trackNumber}`; setMetadata(); };
       $("clear-metadata").onclick = () => { navigator.mediaSession.metadata = null; render(); };
@@ -108,7 +135,7 @@
       });
 
       // ?metadata=1 sets metadata on load (without playing), for tests that need a paused tab with track info.
-      if (new URLSearchParams(location.search).has("metadata")) setMetadata();
+      if (params.has("metadata")) setMetadata();
       render();
     </script>
   </body>

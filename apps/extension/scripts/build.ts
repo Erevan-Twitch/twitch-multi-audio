@@ -56,6 +56,7 @@ const builds: esbuild.BuildOptions[] = [
     format: "iife",
     entryPoints: {
       "content/media-session": "src/content/media-session.ts",
+      "content/page-hook": "src/content/page-hook.ts",
     },
   },
 ];
