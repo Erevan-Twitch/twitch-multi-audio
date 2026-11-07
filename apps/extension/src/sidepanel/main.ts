@@ -1,4 +1,5 @@
 import { PANEL_PORT_NAME, type PanelMessage, type TabEntry } from "../messages.js";
+import "../spike/panel.js"; // SPIKE (throwaway): multi-tab capture test
 
 const list = document.querySelector<HTMLUListElement>("#tabs")!;
 const emptyState = document.querySelector<HTMLParagraphElement>("#empty")!;

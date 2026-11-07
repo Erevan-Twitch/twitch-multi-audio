@@ -48,6 +48,7 @@ const builds: esbuild.BuildOptions[] = [
     entryPoints: {
       "background/service-worker": "src/background/service-worker.ts",
       "sidepanel/main": "src/sidepanel/main.ts",
+      "spike/offscreen": "src/spike/offscreen.ts", // SPIKE (throwaway)
     },
   },
   // Content scripts can't be ES modules: bundle them as classic scripts.

@@ -98,6 +98,23 @@ h1 {
   flex-shrink: 0;
 }
 
+/* SPIKE (throwaway) */
+.spike {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--placeholder);
+  font-size: 0.8125rem;
+}
+.spike h2 { font-size: 1rem; margin: 0 0 8px; }
+.spike h3 { font-size: 0.875rem; margin: 12px 0 4px; }
+.spike .hint { color: var(--muted-text); margin: 4px 0 8px; }
+.spike .fade { display: block; margin: 8px 0; }
+.spike .fade input { width: 4em; }
+#spike-captures { padding-left: 16px; }
+#spike-captures li { margin-bottom: 8px; }
+#spike-captures input[type="range"] { width: 100%; }
+#spike-log { padding-left: 20px; max-height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.75rem; }
+
 #empty {
   margin: 0;
   color: var(--muted-text);

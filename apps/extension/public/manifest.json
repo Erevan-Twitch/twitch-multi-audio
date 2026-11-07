@@ -27,6 +27,12 @@
       "run_at": "document_end"
     }
   ],
-  "permissions": ["sidePanel", "tabs", "activeTab", "storage", "scripting"],
+  "commands": {
+    "spike-capture-tab": {
+      "suggested_key": { "default": "Alt+Shift+C", "mac": "Alt+Shift+C" },
+      "description": "Spike: capture this tab's audio"
+    }
+  },
+  "permissions": ["sidePanel", "tabs", "activeTab", "storage", "scripting", "tabCapture", "offscreen", "contextMenus"],
   "host_permissions": ["http://*/*", "https://*/*"]
 }
