@@ -73,10 +73,29 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 
 ## Version 2 (later)
 
-- Pick tabs as sources (`activeTab` + `tabCapture`). Confirm early that several tabs can be captured at the same time.
+### Test A: multi-tab capture (done)
+
+- [x] Confirm that several tabs can be captured at the same time. Yes: see [docs/spikes/tab-capture.md](spikes/tab-capture.md) (code on the `spike/tab-capture` branch, not merged).
+
+Rules that came out of it:
+- **Adding a tab as a source** starts from something Chrome counts as invoking the extension on that tab (it grants `activeTab`):
+  - the **toolbar button**: set `openPanelOnActionClick: false`, capture in `action.onClicked`, then open the panel with `chrome.sidePanel.open()`
+  - the **context menu** ("Add as audio source")
+  - a **keyboard shortcut** (`commands`)
+- **Never from the side panel:** a panel click doesn't grant `activeTab`. The panel only controls existing captures (volume, switching, crossfade, stop).
+- **A capture stops when its tab moves to another site.** Chrome keeps it running, so the extension stops it, consistent with the tab list's rule. Same-site navigation (next song) keeps it.
+- **A tab that's already captured** is shown as "already a source", not as an error.
+
+### Test B: where the mix happens and how it reaches OBS
+
+- [ ] Decide between mixing in the extension's offscreen document and outputting to a virtual device (`AudioContext.setSinkId()`, e.g. BlackHole), or mixing on the server. Test the first: test A already showed mixing and crossfades work there.
+
+### Then
+
+- Pick tabs as sources (`activeTab` + `tabCapture`) with the rules above.
 - Captured tabs (`chrome.tabCapture.getCapturedTabs()`) always count as identified.
 - Offscreen document for audio processing.
-- WebSocket connection to the server, sending audio and track info.
+- WebSocket connection to the server, sending track info (and audio, if the mix happens on the server).
 
 ## Chrome APIs
 
