@@ -10,19 +10,21 @@ chrome.runtime.onInstalled.addListener(() => {
 // --- Identified tabs ----------------------------------------------------------
 // See "How tabs are identified" in docs/roadmap.md. `audible` only adds a tab;
 // once identified, a tab stays until it closes or moves to a different site.
-// The set lives in storage.session so it survives the service worker stopping.
+// The set lives in storage.local so it survives the service worker stopping and
+// the extension reloading or updating (storage.session is wiped on reload).
+// Tab IDs are only valid for one browser session, so it's cleared on browser start.
 
 const STORAGE_KEY = "identifiedTabs";
 /** Tab ID (as a string, since it's a JSON key) → site the tab was identified on. */
 type IdentifiedTabs = Record<string, string>;
 
 async function loadIdentified(): Promise<IdentifiedTabs> {
-  const stored = await chrome.storage.session.get(STORAGE_KEY);
+  const stored = await chrome.storage.local.get(STORAGE_KEY);
   return (stored[STORAGE_KEY] as IdentifiedTabs | undefined) ?? {};
 }
 
 async function saveIdentified(identified: IdentifiedTabs): Promise<void> {
-  await chrome.storage.session.set({ [STORAGE_KEY]: identified });
+  await chrome.storage.local.set({ [STORAGE_KEY]: identified });
 }
 
 function siteOf(url: string | undefined): string {
@@ -125,6 +127,12 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     identified[addedTabId] = site;
     await saveIdentified(identified);
   });
+  scheduleRefresh();
+});
+
+// New browser session: previous tab IDs may now point to unrelated tabs.
+chrome.runtime.onStartup.addListener(() => {
+  void enqueue(() => chrome.storage.local.remove(STORAGE_KEY));
   scheduleRefresh();
 });
 

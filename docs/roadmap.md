@@ -19,7 +19,7 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 - [x] **Where does the tab list live?**
   - Option 1: the panel reads Chrome directly. Simplest, but the list only exists while the panel is open.
   - Option 2 (recommended): the background service worker keeps the list and the panel shows it. That's where the server connection will run later, so this avoids a rewrite. Chrome stops idle service workers, so the list must be rebuilt by asking Chrome again, or saved in `chrome.storage.session`.
-  - Answer: Option 2. The set of identified tabs is saved in `chrome.storage.session`: it survives Chrome stopping the service worker, and is cleared when the browser closes or the extension reloads.
+  - Answer: Option 2. The set of identified tabs is saved in `chrome.storage.local`: it survives Chrome stopping the service worker and the extension reloading or updating (`storage.session` is wiped on reload). It's cleared on browser start (`runtime.onStartup`), since tab IDs are only valid for one browser session.
 
 ### How tabs are identified
 
@@ -38,11 +38,11 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 
 - [x] Add the `"tabs"` permission to the manifest. Check that tab titles, URLs and icons now come through.
 - [x] Define a "tab source" type: tab ID, tab title, site, favicon, playing or not. Keep it in the extension for now; move it to `@tma/shared` when the server needs it.
-- [x] Service worker: identify tabs with the rule above (`audible` or `mutedInfo.muted` for now) and save their IDs and sites in `chrome.storage.session` (needs the `"storage"` permission).
+- [x] Service worker: identify tabs with the rule above (`audible` or `mutedInfo.muted` for now) and save their IDs and sites in `chrome.storage.local`, cleared on browser start (needs the `"storage"` permission).
 - [x] Service worker: keep the list current with the `tabs` events (`onUpdated`, `onRemoved`, `onReplaced`, etc.). Drop a tab when it closes or moves to a different site.
 - [x] Messaging: the panel asks for the current list when it opens, then receives updates over a `chrome.runtime` port.
 - [x] Panel: show the list (icon, title, site, playing/muted/silent) and an empty state.
-- [ ] Manual check: start and stop audio in two or three tabs, pause one, mute one at the tab level and one in the player, close a tab, navigate a tab to another site, reload the extension, and close and reopen the panel.
+- [x] Manual check: start and stop audio in two or three tabs, pause one, mute one at the tab level and one in the player, close a tab, navigate a tab to another site, reload the extension, and close and reopen the panel.
 
 ### Step 2: track info (title, artist, cover)
 
