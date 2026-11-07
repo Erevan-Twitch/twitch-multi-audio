@@ -59,17 +59,17 @@ Goal: the extension's side panel shows the tabs it has identified, with title, a
 - [x] Fallback when a site doesn't publish track info: use the tab title, and mark the entry as "no track info".
 - [x] Artwork: pick the largest image the page offers.
 - [x] Panel: show cover, title and artist for each tab, then site and favicon.
-- [ ] Manual check: [apps/extension/test/cases/02-track-info.md](../apps/extension/test/cases/02-track-info.md).
+- [x] Manual check: [apps/extension/test/cases/02-track-info.md](../apps/extension/test/cases/02-track-info.md).
 
 ### Step 3: make it reliable
 
-- [ ] Test on YouTube, YouTube Music, Spotify Web, SoundCloud and Deezer, or whatever is actually used on stream. Note which sites publish track info.
-- [ ] Edge cases:
+- [x] Test on YouTube, YouTube Music, Spotify Web, SoundCloud and Deezer, or whatever is actually used on stream. Note which sites publish track info.
+- [x] Edge cases:
   - Moving to a new page inside the same tab, or a single-page site changing view without a reload.
   - Several tabs on the same site.
   - A tab moved to another window.
   - Chrome stopping the service worker while the panel is open.
-- [ ] Add an extension icon so it's easy to find in the toolbar.
+- [x] Add an extension icon so it's easy to find in the toolbar.
 
 ## Version 2 (later)
 

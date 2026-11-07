@@ -187,7 +187,7 @@ For each site used on stream, play a track and fill in the table. Use "partial" 
 | YouTube Music | yes | yes | yes | yes | yes | |
 | Spotify Web | | | | | | |
 | SoundCloud | yes | yes | yes | yes | yes | TI-01 passed |
-| Chillhop | yes | yes | yes | yes | no → retest | TI-01 passed. Plays through an `<audio>` kept out of the page and "mutes" with `volume = 0`, which Chrome still reports as audible. It also has a muted background video. Covered by TI-14 and TI-15. |
+| Chillhop | yes | yes | yes | yes | yes | TI-01 passed. Plays through an `<audio>` kept out of the page and "mutes" with `volume = 0`, which Chrome still reports as audible. It also has a muted background video. Covered by TI-14 and TI-15. |
 | Deezer | | | | | | |
 
 Known limitations:
