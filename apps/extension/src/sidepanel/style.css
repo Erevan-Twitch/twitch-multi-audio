@@ -3,6 +3,7 @@
   font-family: system-ui, sans-serif;
   --muted-text: color-mix(in srgb, currentColor 60%, transparent);
   --row-active: color-mix(in srgb, currentColor 8%, transparent);
+  --placeholder: color-mix(in srgb, currentColor 10%, transparent);
 }
 
 body {
@@ -21,13 +22,13 @@ h1 {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 6px 8px;
   border-radius: 6px;
 }
@@ -36,13 +37,21 @@ h1 {
   background: var(--row-active);
 }
 
-.favicon {
-  width: 16px;
-  height: 16px;
+.cover {
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--placeholder);
 }
 
-.text {
+/* Favicon shown in place of a cover: keep it small and centered. */
+.cover.placeholder {
+  object-fit: none;
+}
+
+.details {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -50,6 +59,7 @@ h1 {
 }
 
 .title,
+.artist,
 .site {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -58,14 +68,33 @@ h1 {
 
 .title {
   font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.artist {
+  font-size: 0.8125rem;
+}
+
+.artist.no-track {
+  font-style: italic;
+  color: var(--muted-text);
 }
 
 .site {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.75rem;
   color: var(--muted-text);
 }
 
-.audio {
+.favicon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.state {
   flex-shrink: 0;
 }
 

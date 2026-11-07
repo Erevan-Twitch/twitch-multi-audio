@@ -1,30 +1,64 @@
-import { PANEL_PORT_NAME, type MuteState, type PanelMessage, type TabEntry } from "../messages.js";
+import {
+  PANEL_PORT_NAME,
+  type ContentMessage,
+  type MediaState,
+  type MuteState,
+  type PanelMessage,
+  type TabEntry,
+} from "../messages.js";
 
-// Open the side panel when the toolbar icon is clicked.
+const CONTENT_SCRIPT_FILE = "content/media-session.js";
+
 chrome.runtime.onInstalled.addListener(() => {
+  // Open the side panel when the toolbar icon is clicked.
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error: unknown) => console.error("Failed to set side panel behavior", error));
+  // Manifest content scripts only run in pages loaded after install/reload.
+  void injectIntoOpenTabs();
 });
 
-// --- Identified tabs ----------------------------------------------------------
-// See "How tabs are identified" in docs/roadmap.md. `audible` only adds a tab;
-// once identified, a tab stays until it closes or moves to a different site.
-// The set lives in storage.local so it survives the service worker stopping and
-// the extension reloading or updating (storage.session is wiped on reload).
-// Tab IDs are only valid for one browser session, so it's cleared on browser start.
-
-const STORAGE_KEY = "identifiedTabs";
-/** Tab ID (as a string, since it's a JSON key) → site the tab was identified on. */
-type IdentifiedTabs = Record<string, string>;
-
-async function loadIdentified(): Promise<IdentifiedTabs> {
-  const stored = await chrome.storage.local.get(STORAGE_KEY);
-  return (stored[STORAGE_KEY] as IdentifiedTabs | undefined) ?? {};
+async function injectIntoOpenTabs(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id === undefined || tab.discarded) return;
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: [CONTENT_SCRIPT_FILE] });
+      } catch {
+        // Some pages can't be scripted (Chrome Web Store, error pages): skip them.
+      }
+    }),
+  );
 }
 
-async function saveIdentified(identified: IdentifiedTabs): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEY]: identified });
+// --- Tab records ------------------------------------------------------------------
+// See "How tabs are identified" in docs/roadmap.md.
+// Records live in storage.local so they survive the service worker stopping and
+// the extension reloading or updating (storage.session is wiped on reload).
+// Tab IDs are only valid for one browser session, so they're cleared on browser start.
+
+const STORAGE_KEY = "tabRecords";
+
+interface TabRecord {
+  /** Site the record belongs to: navigating to another site resets it. */
+  site: string;
+  identified: boolean;
+  /** Had track info while identified: clearing it then removes the tab. */
+  hadTrack: boolean;
+  media?: MediaState;
+}
+
+/** Tab ID (as a string, since it's a JSON key) → record. */
+type TabRecords = Record<string, TabRecord>;
+
+async function loadRecords(): Promise<TabRecords> {
+  const stored = await chrome.storage.local.get(STORAGE_KEY);
+  return (stored[STORAGE_KEY] as TabRecords | undefined) ?? {};
+}
+
+async function saveRecords(records: TabRecords): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEY]: records });
 }
 
 function siteOf(url: string | undefined): string {
@@ -42,43 +76,63 @@ function muteStateOf(tab: chrome.tabs.Tab): MuteState {
   return info.reason === "extension" && info.extensionId === chrome.runtime.id ? "extension" : "user";
 }
 
-function hasAudioSignal(tab: chrome.tabs.Tab): boolean {
-  return (tab.audible ?? false) || (tab.mutedInfo?.muted ?? false);
-}
-
-function toEntry(tab: chrome.tabs.Tab & { id: number }): TabEntry {
+function toEntry(tab: chrome.tabs.Tab & { id: number }, record: TabRecord): TabEntry {
   const entry: TabEntry = {
     id: tab.id,
     windowId: tab.windowId,
     title: tab.title ?? "",
-    site: siteOf(tab.url),
+    site: record.site,
     active: tab.active,
     audible: tab.audible ?? false,
     muted: muteStateOf(tab),
   };
   if (tab.favIconUrl) entry.favIconUrl = tab.favIconUrl;
+  if (record.media) entry.media = record.media;
   return entry;
 }
 
 /** Re-applies the identification rule to the current tabs and returns the identified ones. */
-async function refreshIdentified(): Promise<TabEntry[]> {
-  const [tabs, previous] = await Promise.all([chrome.tabs.query({}), loadIdentified()]);
-  const next: IdentifiedTabs = {};
+async function refreshRecords(): Promise<TabEntry[]> {
+  const [tabs, previous] = await Promise.all([chrome.tabs.query({}), loadRecords()]);
+  const next: TabRecords = {};
   const entries: TabEntry[] = [];
 
   for (const tab of tabs) {
     if (tab.id === undefined || tab.id === chrome.tabs.TAB_ID_NONE) continue;
     const site = siteOf(tab.url);
-    const stillOnSameSite = previous[tab.id] !== undefined && previous[tab.id] === site;
-    if (hasAudioSignal(tab) || stillOnSameSite) {
-      next[tab.id] = site;
-      entries.push(toEntry({ ...tab, id: tab.id }));
-    }
+    const stored = previous[tab.id];
+    const prev = stored?.site === site ? stored : undefined;
+    const media = prev?.media;
+    const hasTrack = media?.track != null;
+
+    const hasSignal =
+      (tab.audible ?? false) ||
+      (tab.mutedInfo?.muted ?? false) ||
+      hasTrack ||
+      media?.playbackState === "playing";
+    const trackWasCleared = (prev?.hadTrack ?? false) && !hasTrack;
+    const stays = (prev?.identified ?? false) && !trackWasCleared;
+    const identified = hasSignal || stays;
+
+    const record: TabRecord = { site, identified, hadTrack: identified && (hasTrack || (prev?.hadTrack ?? false)) };
+    if (media) record.media = media;
+    // Keep records for unidentified tabs only when they hold media info.
+    if (identified || media) next[tab.id] = record;
+    if (identified) entries.push(toEntry({ ...tab, id: tab.id }, record));
   }
 
   // Closed tabs aren't in the query anymore, so they drop out of `next`.
-  if (JSON.stringify(next) !== JSON.stringify(previous)) await saveIdentified(next);
+  if (JSON.stringify(next) !== JSON.stringify(previous)) await saveRecords(next);
   return entries;
+}
+
+async function storeMedia(tabId: number, url: string | undefined, media: MediaState): Promise<void> {
+  const records = await loadRecords();
+  const site = siteOf(url);
+  const prev = records[tabId];
+  records[tabId] =
+    prev?.site === site ? { ...prev, media } : { site, identified: false, hadTrack: false, media };
+  await saveRecords(records);
 }
 
 // Storage reads and writes from overlapping events could overwrite each other,
@@ -103,10 +157,10 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PANEL_PORT_NAME) return;
   panelPorts.add(port);
   port.onDisconnect.addListener(() => panelPorts.delete(port));
-  void enqueue(refreshIdentified).then((tabs) => broadcast(tabs, [port]));
+  void enqueue(refreshRecords).then((tabs) => broadcast(tabs, [port]));
 });
 
-// --- Tab events -----------------------------------------------------------------
+// --- Updates ------------------------------------------------------------------------
 // Updates run even when no panel is open, so a tab that plays briefly while the
 // panel is closed is still identified. Events arriving in bursts (a page load
 // fires several onUpdated) are grouped into one update.
@@ -114,18 +168,26 @@ chrome.runtime.onConnect.addListener((port) => {
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleRefresh(): void {
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => void enqueue(refreshIdentified).then((tabs) => broadcast(tabs)), 100);
+  refreshTimer = setTimeout(() => void enqueue(refreshRecords).then((tabs) => broadcast(tabs)), 100);
 }
 
-// A tab can be swapped for another one with a new ID (prerendering): carry its identification over.
+chrome.runtime.onMessage.addListener((message: ContentMessage, sender) => {
+  // Only the top frame's Media Session is used.
+  if (message.type !== "media:update" || sender.tab?.id === undefined || sender.frameId !== 0) return;
+  const tabId = sender.tab.id;
+  void enqueue(() => storeMedia(tabId, sender.url, message.media));
+  scheduleRefresh();
+});
+
+// A tab can be swapped for another one with a new ID (prerendering): carry its record over.
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
   void enqueue(async () => {
-    const identified = await loadIdentified();
-    const site = identified[removedTabId];
-    if (site === undefined) return;
-    delete identified[removedTabId];
-    identified[addedTabId] = site;
-    await saveIdentified(identified);
+    const records = await loadRecords();
+    const record = records[removedTabId];
+    if (record === undefined) return;
+    delete records[removedTabId];
+    records[addedTabId] = record;
+    await saveRecords(records);
   });
   scheduleRefresh();
 });
