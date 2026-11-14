@@ -1,6 +1,6 @@
 # Handoff: resuming work
 
-Read this first in a new Claude Code session. Last updated 2026-11-07. Also read [docs/roadmap.md](../roadmap.md) (the plan and its decisions) and [the last session recap](2026-11-07-recap.md).
+Read this first in a new Claude Code session. Last updated 2026-11-14. Also read [docs/roadmap.md](../roadmap.md) (the plan and its decisions) and [the last session recap](2026-11-07-recap.md).
 
 ## Project in one paragraph
 
@@ -10,39 +10,55 @@ A tool for a Twitch stream: aggregate several audio sources into one output capt
 
 - **Version 1 (extension lists tabs with track info): done.**
 - **Version 2, test A (several tabs captured at once): done, it works.** See [docs/spikes/tab-capture.md](../spikes/tab-capture.md).
-- **Next: version 2, test B.** Not started; see below.
+- **Version 2, test B (mix on the server, output to BlackHole for OBS): done, it works.** See [docs/spikes/server-mix.md](../spikes/server-mix.md). The roadmap's test B and "Then" sections are updated.
+- **Next: plan the version 2 implementation** from the roadmap's "Then" list, on a new branch from `main`. Nothing from the spike branches is merged; reuse their code by copying it deliberately.
 
 ### Git
 
 | Branch | State |
 | --- | --- |
-| `main` | Bootstrap commit only. |
-| `feat/list-tabs-with-audio` | All the work so far. Last commit `5677907`, **not pushed**. No PR yet: ask the user whether to push, open a PR and merge into `main` before starting version 2. |
-| `spike/tab-capture` | Throwaway test code, pushed. **Never merge.** Read it as a reference for `tabCapture` and offscreen code. |
+| `main` | Version 1 merged (PR #1, `77bba35`), then the test B docs (branch `docs/test-b-results`). |
+| `spike/server-mix` | Test B code (`c77a626`) and its docs, pushed. **Never merge.** The docs were cherry-picked to `main` through `docs/test-b-results`; the code is only on this branch. |
+| `spike/tab-capture` | Test A code, pushed. **Never merge.** |
 
-## Next task: test B (where the mix happens and how it reaches OBS)
+## Decisions made on 2026-11-14 (now in the roadmap's test B section)
 
-Roadmap section "Test B". Recommended first test, agreed but not yet decided:
-- **Mix in the extension:** in the offscreen document, as in test A, where mixing and crossfades already work.
-- **Output to a virtual device:** send the mix to a virtual audio device with `AudioContext.setSinkId(deviceId)`, e.g. BlackHole 2ch on macOS.
-- **Capture in OBS:** OBS captures that device with an audio input source.
-- **The server's role:** selection, track info, Stream Deck and overlay.
+- **The local server is the mixer**, not the extension, because desktop apps (Spotify, VLC) will be captured by native code outside Chrome. The extension streams each captured tab's raw PCM over the WebSocket; the server mixes and writes to the virtual device (BlackHole 2ch) that OBS captures. This replaces the `setSinkId` idea from the previous handoff.
+- **The server is the only control center.** It owns sources, gains, the active source and crossfades. Controllers send requests; the server decides and broadcasts its state. Controllers: side panel now, Stream Deck and web UI later. The extension carries out the server's commands (`capture:stop`) and reports events (`source:added`, `source:ended`, `source:navigated-away`). It has no audio controls.
+- **The server can't start a tab capture:** Chrome needs a user gesture on the tab (toolbar, context menu, shortcut). The extension starts it and announces it; from then on the server owns it.
 
-Alternatives to keep in mind:
-- Mix on the server and write to the virtual device from Node: native module, raw audio over the WebSocket.
-- Mix in an OBS Browser Source page.
+## Architecture diagrams
 
-Do this as a **spike on its own branch** from the up-to-date branch, like `spike/tab-capture`:
-- code in `apps/extension/src/spike/`
-- every line touched outside it marked `SPIKE (throwaway)`
-- the test steps and a results table in `apps/extension/test/cases/`
+[docs/architecture/](../architecture/README.md) holds the architecture as code (LikeC4): the target model, the test B spike, flows and deployment. Open it with `pnpm arch`. Keep `model.c4` in line with decisions; the user installed `likec4` at the root, and its DSL skill is in `.claude/skills/likec4-dsl`.
 
-Risks to check first:
-- **Choosing the output device:** `navigator.mediaDevices.enumerateDevices()` may return empty labels without microphone permission, and an offscreen document can't show a permission prompt. A visible extension page, like the side panel or a tab, may have to request permission first, or pick the device.
-- **Is `setSinkId` there?** Confirm `setSinkId` exists on `AudioContext` in an offscreen document (Chrome 110+).
-- **Echo and duplicates:** the streamer's own monitoring. Captured tabs are silent locally, and the mix plays only where `setSinkId` sends it.
+## Test B: how it went (done)
 
-The user installs BlackHole and configures OBS themselves; write those steps in the test case file.
+- **Round 1:** the audio path, mixing and server control worked. Problems: glitches, the monitor output going silent (an audify warning treated as fatal), panel clicks lost.
+- **Round 2:** fixes confirmed. A 50 ms output queue (`TMA_OUTPUT_QUEUE_BLOCKS=5`) removed the glitches. No drift in 30 min. CPU: server about 5 %, extension about 6–7 %.
+- **Round 3:** the click probe measured about 163 ms from the page to BlackHole. The user heard the click "slightly behind", which agrees. The 0.5 s seen against a YouTube video's picture isn't explained. The user decided it doesn't matter: only the music goes on stream, not the tab's picture.
+- **Version 2 settings:** 40 ms jitter target, 50 ms output queue, both configurable. Add an output underrun counter (Node's worst render gap, 61.6 ms, exceeded the queue without an audible glitch).
+
+Test steps and results (in each case's Got section): [apps/extension/test/cases/spike-server-mix.md](https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/test/cases/spike-server-mix.md).
+
+What exists on `spike/server-mix` (only there, not on `main`; read it with `git show origin/spike/server-mix:<path>`):
+- **Extension** (`apps/extension/src/spike/`):
+  - `pcm-tap.worklet.ts`: 10 ms Int16 stereo blocks.
+  - `offscreen.ts`: WebSocket role `capture`, binary frames with a 20-byte header (tabId, seq, frames, f64 capture time in epoch ms), reconnects.
+  - `panel.ts`: role `control`, renders the server's state and sends requests.
+  - `service-worker.ts`: capture triggers; reports moves to another site.
+  - `server-protocol.ts`: a copy of the server's spike protocol.
+- **Server** (`apps/server/src/spike/`), run with `pnpm --filter @tma/server spike`:
+  - jitter buffer per source (40 ms target)
+  - mixer with sample-accurate ramps
+  - output through `audify` if installed, else `ffmpeg -f audiotoolbox`
+  - stdin console (`list`, `gain`, `fade`, `stop`, `devices`)
+  - `[drift]` log every 5 s
+  - env: `TMA_OUTPUT_DEVICE`, `TMA_MONITOR_DEVICE`, `TMA_OUTPUT_BACKEND`, `TMA_JITTER_MS` (default 40), `TMA_OUTPUT_QUEUE_BLOCKS` (default 2; 5 removes the glitches), `TMA_PROBE=1` (BlackHole loopback for the delay probe)
+  - `probe.ts`: per-stage delay of the click page's clicks (`[latency]` lines)
+
+Checked by Claude: typecheck, build, and Node-only runs with fake WebSocket clients (control flow, `capture:stop`, ffmpeg and audify output, the delay probe). The user installed BlackHole and `audify`, set up OBS, and ran rounds 1–3 in Chrome.
+
+Open for version 2: audify vs ffmpeg vs a native sidecar (audify works; a sidecar may come back with desktop capture).
 
 ## Rules for working with this user
 
@@ -68,7 +84,7 @@ The user installs BlackHole and configures OBS themselves; write those steps in 
 | `scripts/serve-fixtures.ts` | Serves the test page on `localhost:5310` and `127.0.0.1:5310`, which count as two sites. |
 | `test/` | Manual test docs and the test page. |
 
-Shared protocol drafts are in `packages/shared/src/protocol.ts`. `apps/server/src/index.ts` is a WebSocket skeleton on 127.0.0.1:7531.
+Shared protocol drafts are in `packages/shared/src/protocol.ts`. `apps/server/src/index.ts` is a WebSocket skeleton on 127.0.0.1:7531. On `spike/server-mix`, the test B spike server (`pnpm --filter @tma/server spike`) uses the same port, so don't run both.
 
 ## Facts learned the hard way
 
@@ -78,6 +94,7 @@ Shared protocol drafts are in `packages/shared/src/protocol.ts`. `apps/server/sr
 - **A content script in the isolated world can read `navigator.mediaSession.metadata`.**
 - **Starting a capture:** `tabCapture.getMediaStreamId()` needs the `activeTab` grant. A side panel click doesn't give it, and neither does a toolbar click while `openPanelOnActionClick` is true. To make the toolbar button capture, set `openPanelOnActionClick: false`, capture in `action.onClicked`, then call `chrome.sidePanel.open()` immediately to keep the user gesture.
 - **A capture survives navigating to another site.** The extension must stop it itself (version 2 rule).
+- **macOS audio permission blocks without an error.** A process started from VS Code's terminal (the server, or Claude's commands) needs VS Code to be allowed to use audio devices. Until the macOS prompt is answered, opening a device with inputs (BlackHole) just hangs, in audify and in ffmpeg. Devices with no inputs, like the speakers, open fine.
 
 ## Open items
 

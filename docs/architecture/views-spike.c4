@@ -1,0 +1,57 @@
+// Views of the test B spike (spike.c4), as coded on `spike/server-mix`.
+views "Spike B: server mix" {
+
+  view spike-overview of spikeB {
+    title "Spike B: overview"
+    description "What the spike runs: the spike code in the extension, the spike server, BlackHole and OBS."
+    include *
+    exclude tma, tma.**
+    autoLayout LeftRight
+  }
+
+  view spike-extension of spikeB.ext {
+    title "Spike B: extension side"
+    include *
+    exclude tma.**
+    autoLayout LeftRight
+  }
+
+  view spike-server of spikeB.srv {
+    title "Spike B: server side"
+    include *
+    include spikeB.srv.output.*
+    exclude tma.**
+    autoLayout LeftRight
+  }
+
+  dynamic view spike-flow-capture {
+    title "Spike B flow: capture a tab and hear it in OBS"
+    streamer -> spikeB.ext.worker "toolbar button / context menu / Alt+Shift+C"
+    spikeB.ext.worker -> spikeB.ext.offscreen "spike:capture (stream ID)"
+    spikeB.ext.offscreen -> spikeB.srv.wsServer "source:added"
+    spikeB.srv.wsServer -> spikeB.srv.decisions "source:added"
+    spikeB.srv.decisions -> spikeB.srv.mixer "add (gain 1 if alone, else 0)"
+    loop "every 10 ms" {
+      spikeB.ext.pcmTap -> spikeB.ext.offscreen "Int16 block"
+      spikeB.ext.offscreen -> spikeB.srv.wsServer "binary frame (tabId, seq, frames, PCM)"
+      spikeB.srv.wsServer -> spikeB.srv.mixer "push into the jitter buffer"
+      spikeB.srv.output.audify -> spikeB.srv.mixer "render(480)"
+      spikeB.srv.output.audify -> blackhole "mix"
+    }
+    blackhole -> obs "Audio Input Capture"
+  }
+
+  dynamic view spike-flow-console-stop {
+    title "Spike B flow: the server decides to stop a source"
+    description "Typed in the server console; the panel only follows the state."
+    streamer -> spikeB.srv.console "stop 42"
+    spikeB.srv.console -> spikeB.srv.decisions "stopSource(42)"
+    spikeB.srv.decisions -> spikeB.srv.wsServer "capture:stop"
+    spikeB.srv.wsServer -> spikeB.ext.offscreen "capture:stop"
+    spikeB.ext.offscreen -> spikeB.srv.wsServer "source:ended (stopped by the server)"
+    spikeB.srv.wsServer -> spikeB.srv.decisions "source:ended"
+    spikeB.srv.decisions -> spikeB.srv.mixer "remove"
+    spikeB.srv.decisions -> spikeB.srv.wsServer "state"
+    spikeB.srv.wsServer -> spikeB.ext.panel "state: row removed"
+  }
+}

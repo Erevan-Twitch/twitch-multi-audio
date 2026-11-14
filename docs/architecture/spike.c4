@@ -1,0 +1,149 @@
+// Test B spike, as coded on the `spike/server-mix` branch (throwaway, never merged).
+// Question: can tab audio be streamed to the local server, mixed there and sent to OBS through BlackHole,
+// with the server as the only control center?
+// Test cases: apps/extension/test/cases/spike-server-mix.md on the spike/server-mix branch.
+// The spike's code only exists on that branch, so its links point to GitHub.
+model {
+
+  spikeB = system "Test B spike (server mix)" {
+    #spike
+    description '''
+      Throwaway code on `spike/server-mix`. Mirrors the target's audio path and control model
+      with the smallest amount of code, to measure delay, glitches and clock drift.
+    '''
+    link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/test/cases/spike-server-mix.md "Test cases"
+
+    // ---------------------------------------------------------- extension side
+
+    ext = container "Extension (spike code)" {
+      #spike
+      description "`apps/extension/src/spike/`, loaded by the version 1 extension through two `SPIKE (throwaway)` imports."
+      technology "Chrome MV3, TypeScript"
+      icon tech:chrome
+      link https://github.com/Erevan-Twitch/twitch-multi-audio/tree/spike/server-mix/apps/extension/src/spike
+
+      worker = component "Spike service worker" {
+        #spike
+        description '''
+          - Capture triggers: toolbar button (`openPanelOnActionClick: false`), context menu, Alt+Shift+C.
+          - Gets the stream ID, creates the offscreen document.
+          - Remembers each captured tab's site in `storage.session` and reports moves to another site.
+        '''
+        technology "spike/service-worker.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/src/spike/service-worker.ts
+      }
+      offscreen = component "Offscreen document" {
+        #spike
+        description '''
+          `AudioContext` at 48 kHz. Per tab: `MediaStreamSource → pcm-tap`, connected to destination only so it's
+          processed (it outputs silence). One WebSocket (role `capture`), reconnect with backoff,
+          re-announces its sources after a server restart. Carries out `capture:stop`.
+        '''
+        technology "spike/offscreen.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/src/spike/offscreen.ts
+      }
+      pcmTap = component "pcm-tap worklet" {
+        #spike
+        description "Collects 480 frames (10 ms), converts to interleaved Int16 stereo, posts to the offscreen document."
+        technology "spike/pcm-tap.worklet.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/src/spike/pcm-tap.worklet.ts
+      }
+      panel = webpage "Spike panel section" {
+        #spike
+        description "Added under the version 1 tab list. WebSocket role `control`: renders the server's state, sends `set-gain`, `crossfade`, `stop-source`. No state of its own."
+        technology "spike/panel.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/src/spike/panel.ts
+      }
+    }
+
+    // ---------------------------------------------------------- server side
+
+    srv = container "Spike server" {
+      #spike
+      description "`apps/server/src/spike/`, run with `pnpm --filter @tma/server spike`. Same port as the skeleton server (7531): don't run both."
+      technology "Node 24, tsx"
+      icon tech:nodejs
+      link https://github.com/Erevan-Twitch/twitch-multi-audio/tree/spike/server-mix/apps/server/src/spike
+
+      wsServer = component "WebSocket server" {
+        #spike
+        description "Parses binary frames (12-byte header: tabId, seq, frames, then Int16 PCM) and JSON messages; tracks client roles."
+        technology "main.ts, ws"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/server/src/spike/main.ts
+      }
+      decisions = component "Decisions" {
+        #spike
+        description '''
+          `setGain`, `crossfade`, `stopSource` and the "moved to another site → stop" rule.
+          Broadcasts the state on each change and every second; logs `[drift]` every 5 s.
+        '''
+        technology "main.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/server/src/spike/main.ts
+      }
+      console = component "Stdin console" {
+        #spike
+        description "`list`, `gain <id> <0-1>`, `fade <id> <s>`, `stop <id>`, `devices`. Shows the server deciding on its own."
+        technology "main.ts, readline"
+      }
+      mixer = component "Mixer" {
+        #spike
+        description "One jitter buffer and gain per source. New sources start at gain 0 unless alone. Linear ramps, sample-accurate. Ignores frames from unknown sources."
+        technology "mixer.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/server/src/spike/mixer.ts
+      }
+      jitter = component "Jitter buffers" {
+        #spike
+        description "Ring buffer per source: 40 ms target, 500 ms capacity. Counts underruns, overflows; fill level shows drift."
+        technology "jitter-buffer.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/server/src/spike/jitter-buffer.ts
+      }
+      output = component "Output" {
+        #spike
+        description "Picks a backend; env `TMA_OUTPUT_DEVICE` (default BlackHole 2ch), `TMA_OUTPUT_BACKEND`, `TMA_MONITOR_DEVICE`."
+        technology "output.ts"
+        link https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/server/src/spike/output.ts
+
+        audify = component "audify backend" {
+          #spike
+          description "RtAudio in process. The device clock paces the mixer: each finished 10 ms block asks for the next. Two blocks queued ahead."
+          technology "audify (RtAudio)"
+        }
+        ffmpeg = component "ffmpeg backend" {
+          #spike
+          description "Fallback: pipes PCM to `ffmpeg -f audiotoolbox`. A 5 ms Node timer paces the mixer, 40 ms ahead of real time."
+          technology "ffmpeg child process"
+        }
+      }
+    }
+  }
+
+  // ================================================================ relationships
+
+  streamer -> spikeB.ext.worker "adds a tab (toolbar, context menu, shortcut)"
+  streamer -> spikeB.ext.panel "gain, crossfade, stop"
+  streamer -> spikeB.srv.console "types commands"
+
+  spikeB.ext.worker -> spikeB.ext.offscreen "spike:capture (stream ID)"
+  spikeB.ext.worker -[state]-> spikeB.ext.offscreen "spike:navigated (moved to another site)"
+  musicSites -[audio]-> spikeB.ext.offscreen "tab audio (tabCapture)"
+  spikeB.ext.offscreen -[audio]-> spikeB.ext.pcmTap "MediaStream"
+  spikeB.ext.pcmTap -[audio]-> spikeB.ext.offscreen "Int16 blocks (port)"
+  spikeB.ext.offscreen -[audio]-> spikeB.srv.wsServer "PCM frames (binary WS)"
+  spikeB.ext.offscreen -[state]-> spikeB.srv.wsServer "hello capture, source:added / ended / navigated-away"
+  spikeB.srv.wsServer -[control]-> spikeB.ext.offscreen "capture:stop"
+
+  spikeB.ext.panel -[control]-> spikeB.srv.wsServer "hello control, set-gain, crossfade, stop-source"
+  spikeB.srv.wsServer -[state]-> spikeB.ext.panel "state, log"
+
+  spikeB.srv.wsServer -[control]-> spikeB.srv.decisions "requests and events"
+  spikeB.srv.console -[control]-> spikeB.srv.decisions "requests"
+  spikeB.srv.decisions -[state]-> spikeB.srv.wsServer "state broadcasts, capture:stop"
+  spikeB.srv.decisions -[control]-> spikeB.srv.mixer "add, remove, setGain, crossfade"
+  spikeB.srv.wsServer -[audio]-> spikeB.srv.mixer "push(tabId, seq, samples)"
+  spikeB.srv.mixer -[audio]-> spikeB.srv.jitter "push / mixInto"
+  spikeB.srv.output.audify -[audio]-> spikeB.srv.mixer "render(480) pull"
+  spikeB.srv.output.ffmpeg -[audio]-> spikeB.srv.mixer "render(480) pull"
+  spikeB.srv.output.audify -[audio]-> blackhole "mix"
+  spikeB.srv.output.ffmpeg -[audio]-> blackhole "mix (via ffmpeg)"
+  spikeB.srv.output -[audio]-> monitorDevice "optional copy (TMA_MONITOR_DEVICE)"
+}

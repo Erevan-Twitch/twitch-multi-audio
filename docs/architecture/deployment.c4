@@ -1,0 +1,77 @@
+// Where everything runs: the target (one Mac, plus any device for the web UI) and the test B spike.
+deployment {
+
+  machine streamerMac "Streamer's Mac (target)" {
+    description "Everything runs locally; the server listens on 127.0.0.1 only."
+
+    app chrome "Google Chrome" {
+      technology "Chrome 116+"
+      instanceOf musicSites
+      runtime extensionRuntime "Extension" {
+        instanceOf tma.extension
+      }
+    }
+    app node "Node process" {
+      technology "Node 24"
+      instanceOf tma.server
+    }
+    app helper "Desktop capture helper" {
+      technology "macOS 14.2+"
+      instanceOf tma.desktopCapture
+    }
+    app musicApps "Spotify, VLC" {
+      instanceOf desktopApps
+    }
+    app obsApp "OBS Studio" {
+      instanceOf obs
+      runtime browserSource "Browser Source" {
+        instanceOf tma.overlay
+      }
+    }
+    app streamDeckApp "Stream Deck app" {
+      instanceOf streamDeck
+      instanceOf tma.streamDeckPlugin
+    }
+    app coreAudio "CoreAudio" {
+      instanceOf blackhole
+      instanceOf monitorDevice
+    }
+  }
+
+  machine controlDevice "Phone, tablet or second screen" {
+    app browser "Web browser" {
+      instanceOf tma.webUi
+    }
+  }
+
+  machine spikeMac "Streamer's Mac (spike B)" {
+    app chrome "Google Chrome" {
+      instanceOf musicSites
+      runtime extensionRuntime "Extension, with spike code" {
+        instanceOf spikeB.ext
+      }
+    }
+    app node "pnpm --filter @tma/server spike" {
+      technology "Node 24, tsx"
+      instanceOf spikeB.srv
+    }
+    app obsApp "OBS Studio" {
+      instanceOf obs
+    }
+    app coreAudio "CoreAudio" {
+      instanceOf blackhole
+      instanceOf monitorDevice
+    }
+  }
+}
+
+views "Deployment" {
+  deployment view deployment-target {
+    title "Deployment: target"
+    include streamerMac.**, controlDevice.**
+  }
+  deployment view deployment-spike {
+    title "Deployment: spike B"
+    include spikeMac.**
+  }
+}
