@@ -1,0 +1,73 @@
+// Vocabulary shared by the target architecture (model.c4) and the test B spike (spike.c4).
+specification {
+
+  // ---------------------------------------------------------------- elements
+
+  element actor {
+    notation "Person"
+    style { shape person; color green }
+  }
+  element system {
+    notation "Software system"
+    style { color primary }
+  }
+  element external {
+    notation "External software or website"
+    style { color gray }
+  }
+  element device {
+    notation "Audio device or driver"
+    style { shape cylinder; color slate }
+  }
+  element container {
+    notation "Container: an app or a process"
+    style { color blue }
+  }
+  element webpage {
+    notation "Container: a web page"
+    style { shape browser; color blue }
+  }
+  element component {
+    notation "Component"
+    style { shape component; color sky }
+  }
+
+  // ---------------------------------------------------------------- relationships
+
+  relationship audio {
+    notation "Audio stream"
+    color green
+    line solid
+  }
+  relationship control {
+    notation "Request or command (the server decides)"
+    color amber
+    line dashed
+  }
+  relationship state {
+    notation "State or info broadcast"
+    color indigo
+    line dotted
+  }
+
+  // ---------------------------------------------------------------- status tags
+
+  tag built      // Done and merged into main (version 1).
+  tag spike      // Exists only on a spike branch, being tested.
+  tag planned    // Target architecture, not built yet.
+
+  // ---------------------------------------------------------------- deployment
+
+  deploymentNode machine {
+    notation "Computer"
+    style { color slate }
+  }
+  deploymentNode app {
+    notation "Application or OS process"
+    style { color gray }
+  }
+  deploymentNode runtime {
+    notation "Runtime inside an app"
+    style { color gray }
+  }
+}

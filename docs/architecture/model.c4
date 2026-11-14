@@ -1,0 +1,257 @@
+// Target architecture of the whole project, decided on 2026-11-14:
+// the local server is the mixer and the single control center.
+// Test B validated it (docs/spikes/server-mix.md): about 160 ms from tab to OBS, no glitches or drift in 30 min.
+// Status tags: #built (merged in main), #spike (being tested on a branch), #planned.
+// The test B spike, as actually coded, is in spike.c4.
+model {
+
+  // ================================================================ people
+
+  streamer = actor "Streamer" {
+    description "Picks the music sources and controls the mix while streaming."
+  }
+  viewers = actor "Twitch viewers" {
+    description "Hear the mix and see the now-playing overlay."
+  }
+
+  // ================================================================ outside the project
+
+  musicSites = external "Music websites" {
+    description "YouTube, YouTube Music, SoundCloud, Chillhop, Deezer… Playing in Chrome tabs."
+    technology "Web pages"
+    icon tech:chrome
+  }
+  desktopApps = external "Desktop music apps" {
+    #planned
+    description "Spotify, VLC… Native apps, so they can't be captured by the extension."
+    icon tech:spotify
+  }
+  streamDeck = external "Stream Deck" {
+    #planned
+    description "Elgato hardware and its desktop app, which hosts plugins."
+  }
+  obs = external "OBS Studio" {
+    description '''
+      Captures the mix with an **Audio Input Capture** source on BlackHole,
+      and shows the overlay with a **Browser Source**.
+    '''
+  }
+  twitch = external "Twitch" {
+    description "Receives the stream from OBS."
+  }
+  blackhole = device "BlackHole 2ch" {
+    description "Virtual audio device (macOS driver). The server writes the mix to it; OBS reads it as an input."
+    technology "CoreAudio virtual device"
+  }
+  monitorDevice = device "Streamer's headphones" {
+    description "Where the streamer hears the mix, through OBS monitoring or a second server output."
+  }
+
+  // ================================================================ the project
+
+  tma = system "Twitch Multi Audio" {
+    description '''
+      Aggregates audio sources (browser tabs, later desktop apps) into one output captured by OBS,
+      lets the streamer choose and crossfade sources, and shows the current track on stream.
+    '''
+
+    // ---------------------------------------------------------- Chrome extension
+
+    extension = container "Chrome extension" {
+      description '''
+        Manifest V3, plain Chrome APIs, TypeScript bundled by esbuild.
+        Identifies tabs that play audio, reads their track info, captures the tabs chosen as sources
+        and streams their audio to the server. It carries out the server's commands; it doesn't decide.
+      '''
+      technology "Chrome MV3, TypeScript"
+      icon tech:chrome
+      link ../../apps/extension "Code"
+
+      serviceWorker = component "Service worker" {
+        #built
+        description '''
+          - Applies the identification rule and keeps one record per tab in `storage.local`.
+          - Starts captures from user gestures that grant `activeTab`: toolbar button, context menu, shortcut.
+          - Creates the offscreen document and hands it the stream ID.
+          - Reports when a captured tab moves to another site.
+        '''
+        technology "background/service-worker.ts"
+        link ../../apps/extension/src/background/service-worker.ts
+      }
+      contentScript = component "Media session content script" {
+        #built
+        description "Isolated world. Every second, reads `navigator.mediaSession` and the page's media elements; reports `MediaState` changes."
+        technology "content/media-session.ts"
+        link ../../apps/extension/src/content/media-session.ts
+      }
+      pageHook = component "Page hook" {
+        #built
+        description "Main world, from `document_start`. Wraps `HTMLMediaElement.prototype.play` to see players kept out of the page (e.g. Chillhop)."
+        technology "content/page-hook.ts + page-bridge.ts"
+        link ../../apps/extension/src/content/page-hook.ts
+      }
+      sidePanel = webpage "Side panel" {
+        #built
+        description '''
+          Lists identified tabs with cover, title, artist and state (built).
+          Target: also a remote control of the server (control client): sources, gains, crossfades, stop.
+          It can't start a capture: a panel click doesn't grant `activeTab`.
+        '''
+        technology "sidepanel/*"
+        link ../../apps/extension/src/sidepanel
+      }
+      offscreen = component "Offscreen document" {
+        #planned
+        description "Holds the tab captures and the extension's connection to the server. No audio controls."
+        technology "chrome.offscreen (USER_MEDIA)"
+
+        capture = component "Tab capture" {
+          #planned
+          description "Turns the stream ID into a MediaStream (`getUserMedia`, `chromeMediaSource: tab`). The tab goes silent locally."
+          technology "tabCapture + getUserMedia"
+        }
+        pcmTap = component "PCM tap worklet" {
+          #planned
+          description "AudioWorklet: 10 ms blocks of 48 kHz stereo Int16 per tab."
+          technology "AudioWorklet"
+        }
+        serverLink = component "Server link" {
+          #planned
+          description "WebSocket, role `capture`. Sends PCM frames and source events, receives commands (`capture:stop`). Reconnects."
+          technology "WebSocket"
+        }
+      }
+    }
+
+    // ---------------------------------------------------------- local server
+
+    server = container "Local server" {
+      description '''
+        **The mixer and the single control center.** Owns the state (sources, gains, active source,
+        crossfades, track info) and decides. Every controller sends requests; the server applies them
+        and broadcasts the result.
+      '''
+      technology "Node 24, TypeScript"
+      icon tech:nodejs
+      link ../../apps/server "Code"
+
+      gateway = component "WebSocket gateway" {
+        #planned
+        description "ws://127.0.0.1:7531. Client roles: `capture` (extension, desktop helper), `control` (side panel, Stream Deck, web UI), `overlay`."
+        technology "ws"
+      }
+      controlCenter = component "Control center" {
+        #planned
+        description '''
+          The state and the rules: which sources exist, which one is active, gains, crossfades.
+          Applies requests from any controller, sends commands to source providers
+          (e.g. stop a tab capture that moved to another site), broadcasts the state.
+        '''
+        technology "TypeScript"
+      }
+      mixer = component "Mixer" {
+        #planned
+        description "One jitter buffer per source (40 ms target), one gain per source, sample-accurate ramps for crossfades. No clock drift seen in 30 min; keep the buffer-fill log to catch it on longer streams."
+        technology "TypeScript"
+      }
+      audioOutput = component "Audio output" {
+        #planned
+        description "Writes the mix to the virtual device, paced by the device's clock, with 50 ms queued ahead of it (20 ms glitched). audify (RtAudio) works on Node 24; ffmpeg is the fallback. Counts output underruns."
+        technology "audify (RtAudio)"
+      }
+      trackInfo = component "Now playing" {
+        #planned
+        description "Title, artist and cover of the active source, from the extension's track info or the desktop helper."
+        technology "TypeScript"
+      }
+      httpHost = component "HTTP host" {
+        #planned
+        description "Serves the web UI and the overlay page on localhost."
+        technology "HTTP"
+      }
+    }
+
+    desktopCapture = container "Desktop capture helper" {
+      #planned
+      description "Native macOS helper: captures one app's audio (Core Audio process taps, macOS 14.2+) and streams it to the server as another source."
+      technology "Swift"
+      icon tech:swift
+    }
+    streamDeckPlugin = container "Stream Deck plugin" {
+      #planned
+      description "Keys for switching and crossfading sources; key images show the state. A control client of the server."
+      technology "Stream Deck SDK, Node"
+    }
+    webUi = webpage "Web control UI" {
+      #planned
+      description "Browser page with the same controls as the side panel, usable from another device. A control client."
+      technology "HTML, TypeScript"
+    }
+    overlay = webpage "Now-playing overlay" {
+      #planned
+      description "Page shown on stream by an OBS Browser Source: cover, title, artist of the active source."
+      technology "HTML, TypeScript"
+    }
+  }
+
+  // ================================================================ relationships
+
+  // People
+  streamer -> tma.extension.serviceWorker "adds a tab as a source (toolbar button, context menu, shortcut)"
+  streamer -> tma.extension.sidePanel "sees tabs, controls the mix"
+  streamer -> streamDeck "presses keys"
+  streamer -> tma.webUi "controls the mix"
+  streamer -> obs "runs the stream"
+  viewers -> twitch "watch and listen"
+
+  // Inside the extension (version 1, built)
+  tma.extension.contentScript -> musicSites "reads mediaSession and media elements"
+  tma.extension.pageHook -> musicSites "wraps play()"
+  tma.extension.pageHook -[state]-> tma.extension.contentScript "detached player state (DOM events)"
+  tma.extension.contentScript -[state]-> tma.extension.serviceWorker "MediaState: track, playback, muted"
+  tma.extension.serviceWorker -[state]-> tma.extension.sidePanel "identified tabs (runtime port)"
+
+  // Tab capture (version 2)
+  tma.extension.serviceWorker -> tma.extension.offscreen.capture "stream ID (tabCapture.getMediaStreamId)"
+  tma.extension.serviceWorker -[state]-> tma.extension.offscreen.serverLink "track info of captured tabs, moved to another site"
+  musicSites -[audio]-> tma.extension.offscreen.capture "tab audio"
+  tma.extension.offscreen.capture -[audio]-> tma.extension.offscreen.pcmTap "MediaStream"
+  tma.extension.offscreen.pcmTap -[audio]-> tma.extension.offscreen.serverLink "10 ms Int16 blocks"
+  tma.extension.offscreen.serverLink -[audio]-> tma.server.gateway "PCM per tab (binary frames)"
+  tma.extension.offscreen.serverLink -[state]-> tma.server.gateway "source added / ended / moved, track info"
+  tma.server.gateway -[control]-> tma.extension.offscreen.serverLink "commands: capture:stop"
+
+  // Desktop sources
+  desktopApps -[audio]-> tma.desktopCapture "app audio (Core Audio process tap)"
+  tma.desktopCapture -[audio]-> tma.server.gateway "PCM per app"
+  tma.desktopCapture -[state]-> tma.server.gateway "track info"
+  tma.server.gateway -[control]-> tma.desktopCapture "commands: start / stop an app source"
+
+  // Controllers: requests in, state out
+  tma.extension.sidePanel -[control]-> tma.server.gateway "requests: gain, crossfade, stop"
+  tma.server.gateway -[state]-> tma.extension.sidePanel "state"
+  streamDeck -> tma.streamDeckPlugin "key presses (SDK)"
+  tma.streamDeckPlugin -[control]-> tma.server.gateway "requests: switch, crossfade"
+  tma.server.gateway -[state]-> tma.streamDeckPlugin "state, for key images"
+  tma.webUi -[control]-> tma.server.gateway "requests"
+  tma.server.gateway -[state]-> tma.webUi "state"
+  tma.server.gateway -[state]-> tma.overlay "now playing"
+
+  // Inside the server
+  tma.server.gateway -[control]-> tma.server.controlCenter "requests and source events"
+  tma.server.controlCenter -[state]-> tma.server.gateway "state broadcasts and commands"
+  tma.server.gateway -[audio]-> tma.server.mixer "PCM into jitter buffers"
+  tma.server.controlCenter -[control]-> tma.server.mixer "add / remove sources, gains, crossfades"
+  tma.server.controlCenter -> tma.server.trackInfo "active source, track info"
+  tma.server.trackInfo -[state]-> tma.server.gateway "now playing"
+  tma.server.mixer -[audio]-> tma.server.audioOutput "mix, 48 kHz stereo"
+  tma.server.httpHost -> tma.webUi "serves"
+  tma.server.httpHost -> tma.overlay "serves"
+
+  // To the stream
+  tma.server.audioOutput -[audio]-> blackhole "mix"
+  blackhole -[audio]-> obs "Audio Input Capture"
+  obs -> tma.overlay "Browser Source"
+  obs -[audio]-> monitorDevice "monitoring"
+  obs -> twitch "stream (RTMP)"
+}

@@ -11,10 +11,13 @@
     "dev": "turbo run dev",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "clean": "turbo run clean && rm -rf node_modules .turbo"
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "arch": "likec4 serve docs/architecture",
+    "arch:validate": "likec4 validate docs/architecture"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "likec4": "^1.60.0",
     "turbo": "^2.11.10",
     "typescript": "^7.0.2"
   }
