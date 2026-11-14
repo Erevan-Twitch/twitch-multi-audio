@@ -86,16 +86,27 @@ Rules that came out of it:
 - **A capture stops when its tab moves to another site.** Chrome keeps it running, so the extension stops it, consistent with the tab list's rule. Same-site navigation (next song) keeps it.
 - **A tab that's already captured** is shown as "already a source", not as an error.
 
-### Test B: where the mix happens and how it reaches OBS
+### Test B: where the mix happens and how it reaches OBS (done)
 
-- [ ] Decide between mixing in the extension's offscreen document and outputting to a virtual device (`AudioContext.setSinkId()`, e.g. BlackHole), or mixing on the server. Test the first: test A already showed mixing and crossfades work there.
+- [x] Decide where the mix happens. **On the local server**, because desktop apps (Spotify, VLC) will be captured outside Chrome and must join the same mix. It works: see [docs/spikes/server-mix.md](spikes/server-mix.md) (code on the `spike/server-mix` branch, not merged). This replaces the idea of mixing in the offscreen document and outputting with `setSinkId()`.
+
+Rules that came out of it:
+- **The extension streams each captured tab's raw audio to the server** over the WebSocket: 48 kHz stereo, 10 ms blocks. It doesn't play the tab locally.
+- **The server mixes and writes to a virtual device** (BlackHole 2ch on macOS) that OBS captures with an Audio Input Capture.
+- **The server is the only control center.** It owns sources, gains, the active source and crossfades. Controllers (side panel now, Stream Deck and web UI later) send requests; the server decides and broadcasts its state.
+- **The extension only starts captures** (Chrome needs a user gesture on the tab), reports events (source added, ended, moved to another site), and stops a capture when the server says so.
+- **Buffers:** a jitter buffer per source (40 ms target) and 50 ms queued ahead of the output device. That's about 160 ms from the tab to OBS, with no glitches or drift over 30 min. Both stay configurable.
+- **Delay against the tab's own video isn't a goal:** only the music goes on stream.
 
 ### Then
 
-- Pick tabs as sources (`activeTab` + `tabCapture`) with the rules above.
+- Pick tabs as sources (`activeTab` + `tabCapture`) with the rules from test A.
 - Captured tabs (`chrome.tabCapture.getCapturedTabs()`) always count as identified.
-- Offscreen document for audio processing.
-- WebSocket connection to the server, sending track info (and audio, if the mix happens on the server).
+- Offscreen document: capture and stream each tab's audio to the server.
+- The audio and control protocol in `@tma/shared` (audio frames, extension events, controller requests, server state).
+- Server: jitter buffers, mixer, output to the virtual device, state broadcast, and an output underrun counter.
+- Side panel: a remote control of the server's state (volume, switching, crossfade, stop).
+- Send track info to the server too.
 
 ## Chrome APIs
 

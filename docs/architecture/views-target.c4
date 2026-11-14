@@ -1,0 +1,129 @@
+// Views of the target architecture (model.c4).
+global {
+  styleGroup status {
+    style element.tag = #planned { border dashed }
+    style element.tag = #built { border solid }
+  }
+}
+
+views "Target architecture" {
+
+  global style status
+
+  view index {
+    title "1. Overview: the project and its surroundings"
+    description "Twitch Multi Audio as a whole: who uses it and what it talks to. Click an element to drill down."
+    include *
+    exclude spikeB
+    style tma { color primary }
+    autoLayout LeftRight
+  }
+
+  view containers of tma {
+    title "2. Containers of Twitch Multi Audio"
+    description '''
+      The local server is the mixer and the only control center. Source providers (extension, desktop helper)
+      send audio and events; controllers (side panel, Stream Deck, web UI) send requests; everyone receives state.
+      Dashed border: planned.
+    '''
+    include *
+    exclude spikeB, spikeB.**
+    autoLayout LeftRight
+  }
+
+  view extension of tma.extension {
+    title "3a. Chrome extension: components"
+    description "Version 1 (solid border) lists tabs and reads track info. Version 2 (dashed) adds the offscreen document that captures tabs and talks to the server."
+    include *
+    include tma.extension.offscreen.*
+    exclude spikeB.**
+    autoLayout LeftRight
+  }
+
+  view server of tma.server {
+    title "3b. Local server: components"
+    description "Everything goes through the gateway; the control center decides, the mixer renders, the output feeds BlackHole."
+    include *
+    exclude spikeB.**
+    autoLayout LeftRight
+  }
+
+  view status {
+    title "4. Build status"
+    description "Green: built and merged (version 1). Gray, dashed: planned. The spike for test B is in the \"Spike B\" folder."
+    include tma.**
+    exclude * -> *
+    style tma.** { color muted }
+    style element.tag = #built { color green }
+  }
+
+  // ---------------------------------------------------------- flows
+
+  dynamic view flow-add-tab {
+    title "5a. Flow: adding a tab as a source"
+    description "Only a user gesture on the tab can start a capture (activeTab). From then on the server owns the source."
+    streamer -> tma.extension.serviceWorker "clicks the toolbar button on a playing tab"
+    tma.extension.serviceWorker -> tma.extension.offscreen.capture "stream ID (expires in seconds)"
+    tma.extension.offscreen.serverLink -> tma.server.gateway "source:added"
+    tma.server.gateway -> tma.server.controlCenter "source:added"
+    tma.server.controlCenter -> tma.server.mixer "add source (gain 0 unless it's the only one)"
+    tma.server.controlCenter -> tma.server.gateway "state"
+    tma.server.gateway -> tma.extension.sidePanel "state: new source listed"
+  }
+
+  dynamic view flow-audio {
+    title "5b. Flow: audio from a tab to the stream"
+    description "Captured tabs are silent in Chrome; they're only heard through the server's mix."
+    musicSites -> tma.extension.offscreen.capture "tab audio"
+    tma.extension.offscreen.capture -> tma.extension.offscreen.pcmTap "MediaStream"
+    tma.extension.offscreen.pcmTap -> tma.extension.offscreen.serverLink "10 ms Int16 blocks"
+    tma.extension.offscreen.serverLink -> tma.server.gateway "binary frames"
+    tma.server.gateway -> tma.server.mixer "jitter buffer per source"
+    tma.server.mixer -> tma.server.audioOutput "mix"
+    tma.server.audioOutput -> blackhole "48 kHz stereo"
+    blackhole -> obs "Audio Input Capture"
+    obs -> twitch "stream"
+  }
+
+  dynamic view flow-crossfade {
+    title "5c. Flow: crossfade from the Stream Deck"
+    description "Any controller works the same way: it asks, the server decides and tells everyone."
+    streamer -> streamDeck "presses a source key"
+    streamDeck -> tma.streamDeckPlugin "key down"
+    tma.streamDeckPlugin -> tma.server.gateway "request: crossfade to source X"
+    tma.server.gateway -> tma.server.controlCenter "request"
+    tma.server.controlCenter -> tma.server.mixer "ramp X to 1, others to 0"
+    tma.server.controlCenter -> tma.server.trackInfo "active source = X"
+    parallel {
+      tma.server.gateway -> tma.extension.sidePanel "state"
+      tma.server.gateway -> tma.streamDeckPlugin "state (key images)"
+      tma.server.gateway -> tma.overlay "now playing"
+    }
+  }
+
+  dynamic view flow-moved-site {
+    title "5d. Flow: a captured tab moves to another site"
+    description "Version 2 rule, decided by the server: the capture stops. Same-site navigation (next song) keeps it."
+    tma.extension.serviceWorker -> tma.extension.offscreen.serverLink "tab moved to another site"
+    tma.extension.offscreen.serverLink -> tma.server.gateway "source:navigated-away"
+    tma.server.gateway -> tma.server.controlCenter "event"
+    tma.server.controlCenter -> tma.server.gateway "decision: stop it"
+    tma.server.gateway -> tma.extension.offscreen.serverLink "capture:stop"
+    tma.extension.offscreen.serverLink -> tma.extension.offscreen.capture "stop the tracks"
+    tma.extension.offscreen.serverLink -> tma.server.gateway "source:ended"
+    tma.server.gateway -> tma.server.controlCenter "event"
+    tma.server.controlCenter -> tma.server.mixer "remove source"
+  }
+
+  dynamic view flow-now-playing {
+    title "5e. Flow: track info to the on-stream overlay"
+    tma.extension.contentScript -> tma.extension.serviceWorker "MediaState: title, artist, cover"
+    tma.extension.serviceWorker -> tma.extension.offscreen.serverLink "track info of a captured tab"
+    tma.extension.offscreen.serverLink -> tma.server.gateway "track info"
+    tma.server.gateway -> tma.server.controlCenter "track info"
+    tma.server.controlCenter -> tma.server.trackInfo "update the source"
+    tma.server.trackInfo -> tma.server.gateway "now playing (active source)"
+    tma.server.gateway -> tma.overlay "now playing"
+    obs -> tma.overlay "renders as a Browser Source"
+  }
+}
