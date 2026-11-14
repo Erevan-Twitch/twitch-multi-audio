@@ -1,6 +1,6 @@
 # Spike: mix on the local server, output to OBS
 
-Throwaway test run on 2026-11-14, before version 2 (test B). The code is on the `spike/server-mix` branch (not to be merged). The test steps and the full results are in [apps/extension/test/cases/spike-server-mix.md](../../apps/extension/test/cases/spike-server-mix.md) (rounds 1 to 3).
+Throwaway test run on 2026-11-14, before version 2 (test B). The code is on the `spike/server-mix` branch (not to be merged). The test steps and the full results are in [apps/extension/test/cases/spike-server-mix.md](https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/test/cases/spike-server-mix.md) (rounds 1 to 3).
 
 ## Question
 

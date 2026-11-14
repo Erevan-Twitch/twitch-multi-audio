@@ -17,8 +17,8 @@ A tool for a Twitch stream: aggregate several audio sources into one output capt
 
 | Branch | State |
 | --- | --- |
-| `main` | Version 1 merged (PR #1, `77bba35`). |
-| `spike/server-mix` | Test B, from `main`, with test A's code on top. Committed locally (`c77a626` spike code, then a `docs:` commit), not pushed. **Never merge**; the docs commit is worth bringing to `main`. |
+| `main` | Version 1 merged (PR #1, `77bba35`), then the test B docs (branch `docs/test-b-results`). |
+| `spike/server-mix` | Test B code (`c77a626`) and its docs, pushed. **Never merge.** The docs were cherry-picked to `main` through `docs/test-b-results`; the code is only on this branch. |
 | `spike/tab-capture` | Test A code, pushed. **Never merge.** |
 
 ## Decisions made on 2026-11-14 (now in the roadmap's test B section)
@@ -38,9 +38,9 @@ A tool for a Twitch stream: aggregate several audio sources into one output capt
 - **Round 3:** the click probe measured about 163 ms from the page to BlackHole. The user heard the click "slightly behind", which agrees. The 0.5 s seen against a YouTube video's picture isn't explained. The user decided it doesn't matter: only the music goes on stream, not the tab's picture.
 - **Version 2 settings:** 40 ms jitter target, 50 ms output queue, both configurable. Add an output underrun counter (Node's worst render gap, 61.6 ms, exceeded the queue without an audible glitch).
 
-Test steps and results (in each case's Got section): [apps/extension/test/cases/spike-server-mix.md](../../apps/extension/test/cases/spike-server-mix.md).
+Test steps and results (in each case's Got section): [apps/extension/test/cases/spike-server-mix.md](https://github.com/Erevan-Twitch/twitch-multi-audio/blob/spike/server-mix/apps/extension/test/cases/spike-server-mix.md).
 
-What exists on `spike/server-mix`:
+What exists on `spike/server-mix` (only there, not on `main`; read it with `git show origin/spike/server-mix:<path>`):
 - **Extension** (`apps/extension/src/spike/`):
   - `pcm-tap.worklet.ts`: 10 ms Int16 stereo blocks.
   - `offscreen.ts`: WebSocket role `capture`, binary frames with a 20-byte header (tabId, seq, frames, f64 capture time in epoch ms), reconnects.
@@ -84,7 +84,7 @@ Open for version 2: audify vs ffmpeg vs a native sidecar (audify works; a sideca
 | `scripts/serve-fixtures.ts` | Serves the test page on `localhost:5310` and `127.0.0.1:5310`, which count as two sites. |
 | `test/` | Manual test docs and the test page. |
 
-Shared protocol drafts are in `packages/shared/src/protocol.ts`. `apps/server/src/index.ts` is a WebSocket skeleton on 127.0.0.1:7531. The test B spike server (`pnpm --filter @tma/server spike`) uses the same port, so don't run both.
+Shared protocol drafts are in `packages/shared/src/protocol.ts`. `apps/server/src/index.ts` is a WebSocket skeleton on 127.0.0.1:7531. On `spike/server-mix`, the test B spike server (`pnpm --filter @tma/server spike`) uses the same port, so don't run both.
 
 ## Facts learned the hard way
 

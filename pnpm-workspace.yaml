@@ -5,3 +5,13 @@ packages:
 # Dependencies allowed to run install scripts.
 allowBuilds:
   esbuild: true
+
+permissions:
+  likec4:
+    skills: true
+
+skills:
+  dirs:
+    - .agent/skills
+    - .agents/skills
+    - .claude/skills
