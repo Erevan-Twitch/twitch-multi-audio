@@ -14,5 +14,19 @@
   "side_panel": {
     "default_path": "sidepanel/index.html"
   },
-  "permissions": ["sidePanel", "tabs", "activeTab"]
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/media-session.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": ["sidePanel", "tabs", "activeTab", "storage", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"]
 }

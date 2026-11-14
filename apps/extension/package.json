@@ -7,6 +7,7 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "dev": "node scripts/build.ts --watch",
+    "test:fixtures": "node scripts/serve-fixtures.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
     "clean": "rm -rf dist .turbo"
   },

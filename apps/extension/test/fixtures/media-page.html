@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TMA test player</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 24px; max-width: 640px; }
+      fieldset { margin: 0 0 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      label { display: flex; gap: 6px; align-items: center; }
+      output { font-family: ui-monospace, monospace; white-space: pre-wrap; display: block; }
+    </style>
+  </head>
+  <body>
+    <h1>TMA test player</h1>
+    <p>Controllable page for the extension's manual tests. See <code>apps/extension/test/README.md</code>.</p>
+
+    <fieldset>
+      <legend>Player (440 Hz tone in an &lt;audio&gt; element)</legend>
+      <button id="play">Play</button>
+      <button id="pause">Pause</button>
+      <button id="mute-player">Mute in player</button>
+      <button id="unmute-player">Unmute in player</button>
+      <button id="volume-zero">Volume 0 in player</button>
+      <button id="volume-restore">Restore volume</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Media Session metadata</legend>
+      <label>Title <input id="title" value="Test Track 1" /></label>
+      <label>Artist <input id="artist" value="Test Artist" /></label>
+      <button id="set-metadata">Set metadata</button>
+      <button id="next-track">Next track</button>
+      <button id="clear-metadata">Clear metadata</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Declared playbackState</legend>
+      <button data-playback-state="none">none</button>
+      <button data-playback-state="playing">playing</button>
+      <button data-playback-state="paused">paused</button>
+    </fieldset>
+
+    <h2>Current page state</h2>
+    <output id="state"></output>
+
+    <script>
+      // Quiet looping 440 Hz tone, generated as a WAV file so no asset is needed.
+      function toneUrl() {
+        const rate = 22050, seconds = 1, samples = rate * seconds;
+        const buffer = new ArrayBuffer(44 + samples * 2);
+        const view = new DataView(buffer);
+        const write = (offset, text) => [...text].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+        write(0, "RIFF"); view.setUint32(4, 36 + samples * 2, true); write(8, "WAVE");
+        write(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+        view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+        write(36, "data"); view.setUint32(40, samples * 2, true);
+        for (let i = 0; i < samples; i++) view.setInt16(44 + i * 2, Math.sin((2 * Math.PI * 440 * i) / rate) * 3000, true);
+        return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+      }
+
+      // Solid-color square artwork, so the chosen size is easy to tell apart.
+      function artwork(color, size) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="${color}"/></svg>`;
+        return { src: `data:image/svg+xml,${encodeURIComponent(svg)}`, sizes: `${size}x${size}`, type: "image/svg+xml" };
+      }
+
+      const params = new URLSearchParams(location.search);
+
+      const audio = new Audio(toneUrl());
+      audio.loop = true;
+      // ?detached=1 keeps the player out of the page, like sites the content script can't see into.
+      if (!params.has("detached")) document.body.append(audio);
+
+      // ?bgvideo=1 adds a decorative background video: `muted` attribute, autoplay, loop.
+      if (params.has("bgvideo")) {
+        const canvas = Object.assign(document.createElement("canvas"), { width: 160, height: 90 });
+        const context = canvas.getContext("2d");
+        let hue = 0;
+        setInterval(() => { hue = (hue + 2) % 360; context.fillStyle = `hsl(${hue} 60% 50%)`; context.fillRect(0, 0, 160, 90); }, 50);
+        const video = document.createElement("video");
+        video.setAttribute("muted", "");
+        video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.srcObject = canvas.captureStream(20);
+        video.id = "bg-video";
+        document.body.prepend(video);
+      }
+
+      const $ = (id) => document.getElementById(id);
+      let trackNumber = 1;
+
+      function setMetadata() {
+        // Largest artwork (green, 512) is listed FIRST on purpose: the extension must pick by size, not position.
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: $("title").value,
+          artist: $("artist").value,
+          album: "Test Album",
+          artwork: [artwork("#2e9e4f", 512), artwork("#d33", 96), artwork("#33d", 192)],
+        });
+        render();
+      }
+
+      function render() {
+        const m = navigator.mediaSession.metadata;
+        $("state").textContent = JSON.stringify(
+          {
+            playing: !audio.paused,
+            playerMuted: audio.muted,
+            playerVolume: audio.volume,
+            playerInPage: audio.isConnected,
+            backgroundVideo: params.has("bgvideo"),
+            declaredPlaybackState: navigator.mediaSession.playbackState,
+            metadata: m ? { title: m.title, artist: m.artist } : null,
+          },
+          null,
+          2,
+        );
+      }
+
+      $("play").onclick = () => audio.play().then(render);
+      $("pause").onclick = () => { audio.pause(); render(); };
+      $("mute-player").onclick = () => { audio.muted = true; render(); };
+      $("unmute-player").onclick = () => { audio.muted = false; render(); };
+      // Like Chillhop: "mute" by volume, which Chrome still reports as audible.
+      $("volume-zero").onclick = () => { audio.volume = 0; render(); };
+      $("volume-restore").onclick = () => { audio.volume = 1; render(); };
+      $("set-metadata").onclick = setMetadata;
+      $("next-track").onclick = () => { trackNumber += 1; $("title").value = `Test Track ${trackNumber}`; setMetadata(); };
+      $("clear-metadata").onclick = () => { navigator.mediaSession.metadata = null; render(); };
+      document.querySelectorAll("[data-playback-state]").forEach((button) => {
+        button.onclick = () => { navigator.mediaSession.playbackState = button.dataset.playbackState; render(); };
+      });
+
+      // ?metadata=1 sets metadata on load (without playing), for tests that need a paused tab with track info.
+      if (params.has("metadata")) setMetadata();
+      render();
+    </script>
+  </body>
+</html>

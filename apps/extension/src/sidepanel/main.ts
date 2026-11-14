@@ -3,13 +3,43 @@ import { PANEL_PORT_NAME, type PanelMessage, type TabEntry } from "../messages.j
 const list = document.querySelector<HTMLUListElement>("#tabs")!;
 const emptyState = document.querySelector<HTMLParagraphElement>("#empty")!;
 
-function hostname(url: string | undefined): string {
-  if (!url) return "";
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
+const MUTE_LABELS: Record<TabEntry["muted"], string> = {
+  none: "",
+  extension: "Muted by Twitch Multi Audio",
+  user: "Muted (tab)",
+};
+
+function status(tab: TabEntry): { icon: string; label: string } {
+  if (tab.muted !== "none") return { icon: "🔇", label: MUTE_LABELS[tab.muted] };
+  const playing = tab.audible || tab.media?.playbackState === "playing";
+  if (playing && tab.media?.playerMuted) {
+    return { icon: "🔈", label: "Muted in the player: unmute it in the page" };
   }
+  if (tab.silentWhilePlaying) {
+    return { icon: "🔈", label: "Playing but silent: probably muted in the player" };
+  }
+  if (playing) return { icon: "🔊", label: "Playing" };
+  return { icon: "⏸", label: "Paused" };
+}
+
+function image(className: string, src: string | undefined, fallback?: string): HTMLImageElement {
+  const img = document.createElement("img");
+  img.className = className;
+  img.alt = "";
+  if (src) img.src = src;
+  // Some images (chrome:// favicons, blob: covers, broken URLs) can't be loaded here.
+  img.addEventListener("error", () => {
+    if (fallback && img.src !== fallback) img.src = fallback;
+    else img.removeAttribute("src");
+  });
+  return img;
+}
+
+function text(className: string, content: string): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = className;
+  span.textContent = content;
+  return span;
 }
 
 function renderTab(tab: TabEntry): HTMLLIElement {
@@ -17,33 +47,32 @@ function renderTab(tab: TabEntry): HTMLLIElement {
   item.className = "tab";
   item.classList.toggle("active", tab.active);
 
-  const icon = document.createElement("img");
-  icon.className = "favicon";
-  icon.alt = "";
-  if (tab.favIconUrl) icon.src = tab.favIconUrl;
-  // Some favicons (chrome:// pages, broken URLs) can't be loaded here.
-  icon.addEventListener("error", () => icon.removeAttribute("src"));
+  const track = tab.media?.track;
+  const cover = track?.coverUrl
+    ? image("cover", track.coverUrl, tab.favIconUrl)
+    : image("cover placeholder", tab.favIconUrl);
 
-  const text = document.createElement("div");
-  text.className = "text";
-  const title = document.createElement("span");
-  title.className = "title";
-  title.textContent = tab.title || "Untitled";
-  const site = document.createElement("span");
-  site.className = "site";
-  site.textContent = hostname(tab.url);
-  text.append(title, site);
-
-  item.append(icon, text);
-
-  if (tab.audible || tab.muted) {
-    const audio = document.createElement("span");
-    audio.className = "audio";
-    audio.textContent = tab.muted ? "🔇" : "🔊";
-    audio.title = tab.muted ? "Muted" : "Playing audio";
-    item.append(audio);
+  const details = document.createElement("div");
+  details.className = "details";
+  if (track) {
+    details.append(text("title", track.title || tab.title || "Untitled"));
+    if (track.artist) details.append(text("artist", track.artist));
+  } else {
+    details.append(text("title", tab.title || "Untitled"));
+    details.append(text("artist no-track", "No track info"));
   }
 
+  const site = document.createElement("span");
+  site.className = "site";
+  site.append(image("favicon", tab.favIconUrl), document.createTextNode(tab.site));
+  details.append(site);
+
+  const { icon, label } = status(tab);
+  const state = text("state", icon);
+  state.title = label;
+  state.setAttribute("aria-label", label);
+
+  item.append(cover, details, state);
   return item;
 }
 

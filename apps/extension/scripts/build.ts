@@ -30,27 +30,45 @@ async function copyStatic(): Promise<void> {
   }
 }
 
-const options: esbuild.BuildOptions = {
+const common: esbuild.BuildOptions = {
   absWorkingDir: root,
-  entryPoints: {
-    "background/service-worker": "src/background/service-worker.ts",
-    "sidepanel/main": "src/sidepanel/main.ts",
-  },
   outdir: outDir,
   bundle: true,
-  format: "esm",
   target: "chrome116",
   sourcemap: isWatch ? "inline" : false,
   minify: !isWatch,
   logLevel: "info",
 };
 
+const builds: esbuild.BuildOptions[] = [
+  // Extension pages and the service worker load ES modules.
+  {
+    ...common,
+    format: "esm",
+    entryPoints: {
+      "background/service-worker": "src/background/service-worker.ts",
+      "sidepanel/main": "src/sidepanel/main.ts",
+    },
+  },
+  // Content scripts can't be ES modules: bundle them as classic scripts.
+  {
+    ...common,
+    format: "iife",
+    entryPoints: {
+      "content/media-session": "src/content/media-session.ts",
+      "content/page-hook": "src/content/page-hook.ts",
+    },
+  },
+];
+
 await rm(outDir, { recursive: true, force: true });
 await copyStatic();
 
 if (isWatch) {
-  const ctx = await esbuild.context(options);
-  await ctx.watch();
+  for (const options of builds) {
+    const ctx = await esbuild.context(options);
+    await ctx.watch();
+  }
   for (const dir of [srcDir, publicDir]) {
     watch(dir, { recursive: true }, (_event, file) => {
       if (file && (dir === publicDir || /\.(html|css)$/.test(file))) {
@@ -62,5 +80,5 @@ if (isWatch) {
   }
   console.log("Watching for changes. Reload the extension in chrome://extensions after edits.");
 } else {
-  await esbuild.build(options);
+  await Promise.all(builds.map((options) => esbuild.build(options)));
 }
