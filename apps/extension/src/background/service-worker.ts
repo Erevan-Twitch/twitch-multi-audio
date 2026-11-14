@@ -7,13 +7,16 @@ import {
   type TabEntry,
 } from "../messages.js";
 
+import "../spike/service-worker.js"; // SPIKE (throwaway): server mix test
+
 const CONTENT_SCRIPT_FILE = "content/media-session.js";
 const PAGE_HOOK_FILE = "content/page-hook.js";
 
 chrome.runtime.onInstalled.addListener(() => {
   // Open the side panel when the toolbar icon is clicked.
+  // SPIKE (throwaway): false so the click reaches action.onClicked (captures the tab, then opens the panel). Restore to true.
   chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
+    .setPanelBehavior({ openPanelOnActionClick: false })
     .catch((error: unknown) => console.error("Failed to set side panel behavior", error));
   // Manifest content scripts only run in pages loaded after install/reload.
   void injectIntoOpenTabs();

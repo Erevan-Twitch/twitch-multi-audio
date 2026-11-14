@@ -1,0 +1,95 @@
+<!doctype html>
+<!--
+  SPIKE (throwaway), round 3 of test B: delay breakdown.
+  Plays a 10 ms click every 2 s and tells the spike server when each click was played,
+  so the server can time the same click at each stage (see apps/server/src/spike/probe.ts).
+  Served by `pnpm --filter @tma/extension test:fixtures` at http://localhost:5310/click-page.html
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Click page (delay probe)</title>
+    <style>
+      body { font: 15px system-ui, sans-serif; margin: 24px; max-width: 640px; }
+      #flash { width: 120px; height: 120px; border-radius: 12px; background: #ddd; margin: 16px 0; }
+      #flash.on { background: #e33; }
+      #log { font: 12px ui-monospace, monospace; padding-left: 20px; }
+    </style>
+  </head>
+  <body>
+    <h1>Click page</h1>
+    <p>A click every 2 s, with the square flashing at the same time. Capture this tab, then start.</p>
+    <button id="start">Start clicks</button>
+    <button id="stop" disabled>Stop</button>
+    <p id="server">Server: not connected</p>
+    <div id="flash"></div>
+    <ol id="log" reversed></ol>
+
+    <script>
+      const SERVER_URL = "ws://127.0.0.1:7531";
+      const serverLine = document.querySelector("#server");
+      const flash = document.querySelector("#flash");
+      const logList = document.querySelector("#log");
+      let context, timer, socket, id = 0;
+
+      function connect() {
+        socket = new WebSocket(SERVER_URL);
+        socket.addEventListener("open", () => {
+          serverLine.textContent = "Server: connected";
+          socket.send(JSON.stringify({ type: "hello", role: "probe" }));
+        });
+        socket.addEventListener("close", () => {
+          serverLine.textContent = "Server: not connected, retrying…";
+          setTimeout(connect, 2000);
+        });
+      }
+      connect();
+
+      function clickBuffer() {
+        // 10 ms of a 2 kHz tone at 90 %: easy to find after 2 s of silence.
+        const frames = Math.round(context.sampleRate * 0.01);
+        const buffer = context.createBuffer(1, frames, context.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < frames; i++) data[i] = 0.9 * Math.sin((2 * Math.PI * 2000 * i) / context.sampleRate);
+        return buffer;
+      }
+
+      function playClick() {
+        const when = context.currentTime + 0.1;
+        const source = context.createBufferSource();
+        source.buffer = clickBuffer();
+        source.connect(context.destination);
+        source.start(when);
+
+        // Epoch ms at which the click is rendered (what tab capture taps), from the context's
+        // own output clock, minus the output device's latency (capture happens before it).
+        const ts = context.getOutputTimestamp();
+        const at = performance.timeOrigin + ts.performanceTime + (when - ts.contextTime) * 1000 - context.outputLatency * 1000;
+        const clickId = ++id;
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "probe:click", id: clickId, at }));
+
+        setTimeout(() => {
+          flash.classList.add("on");
+          setTimeout(() => flash.classList.remove("on"), 150);
+        }, Math.max(0, at - Date.now()));
+        const item = document.createElement("li");
+        item.textContent = `click #${clickId} at ${new Date(at).toLocaleTimeString()}.${String(Math.round(at % 1000)).padStart(3, "0")}`;
+        logList.prepend(item);
+      }
+
+      document.querySelector("#start").addEventListener("click", async () => {
+        context ??= new AudioContext();
+        await context.resume();
+        playClick();
+        timer = setInterval(playClick, 2000);
+        document.querySelector("#start").disabled = true;
+        document.querySelector("#stop").disabled = false;
+      });
+      document.querySelector("#stop").addEventListener("click", () => {
+        clearInterval(timer);
+        document.querySelector("#start").disabled = false;
+        document.querySelector("#stop").disabled = true;
+      });
+    </script>
+  </body>
+</html>

@@ -10,10 +10,12 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo",
+    "spike": "tsx src/spike/main.ts"
   },
   "dependencies": {
     "@tma/shared": "workspace:*",
+    "audify": "^1.10.1",
     "ws": "^8.22.1"
   },
   "devDependencies": {
